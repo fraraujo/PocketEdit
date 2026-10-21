@@ -411,6 +411,12 @@
             font-size: 11px;
             color: #ccc;
             text-transform: uppercase;
+            display: inline-block; /* label element: keep the old div layout */
+        }
+
+        .toggle-switch:focus-visible {
+            outline: 2px solid #ff6b35;
+            outline-offset: 2px;
         }
 
         .toggle-switch {
@@ -540,6 +546,45 @@
 
         .log-panel.visible {
             display: flex;
+        }
+
+        /* Non-blocking notifications (replaces window.alert) */
+        .toast-container {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 3000;
+            pointer-events: none;
+            max-width: min(520px, 90vw);
+        }
+
+        .toast {
+            pointer-events: auto;
+            background: #1e1e1e;
+            color: #eee;
+            border: 1px solid #444;
+            border-left: 4px solid #888;
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 13px;
+            line-height: 1.4;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+            animation: toast-in 0.18s ease-out;
+        }
+
+        .toast.success { border-left-color: #4caf50; }
+        .toast.error   { border-left-color: #e05252; }
+        .toast.warning { border-left-color: #e0a33e; }
+
+        .toast.leaving { opacity: 0; transition: opacity 0.25s ease; }
+
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
         }
 
         .log-header {
@@ -886,7 +931,8 @@
             100% { background-color: transparent; }
         }
 
-        #delay-time-ms-7 {
+        /* Calculated delay time readout (id is suffixed with the module id) */
+        [id^="delay-time-ms-"] {
             font-size: 1.2em;
             color: #ccc;
             transition: color 0.2s ease; /* Optional: adds a smooth fade to red */
@@ -956,14 +1002,14 @@
                     <div id="statusDot" class="status-dot"></div>
                     <span id="statusText">Disconnected</span>
                 </div>
-                <button id="connectBtn" class="btn btn-primary">Connect</button>
-                <button id="disconnectBtn" class="btn" disabled>Disconnect</button>
+                <button type="button" id="connectBtn" class="btn btn-primary">Connect</button>
+                <button type="button" id="disconnectBtn" class="btn" disabled>Disconnect</button>
             </div>
 
             <div class="patch-list">
                  <div class="patch-tabs">
-                    <button id="factoryTabBtn" class="patch-tab-btn">Factory</button>
-                    <button id="userTabBtn" class="patch-tab-btn active">User</button>
+                    <button type="button" id="factoryTabBtn" class="patch-tab-btn">Factory</button>
+                    <button type="button" id="userTabBtn" class="patch-tab-btn active">User</button>
                 </div>
                 <div class="patch-search-container">
                     <input type="text" id="patchSearchInput" placeholder="Search patches...">
@@ -990,7 +1036,7 @@
                         </div>
                     </div>
 
-                    <button id="advancedSettingsBtn" class="settings-btn">⚙️</button>
+                    <button type="button" id="advancedSettingsBtn" class="settings-btn" aria-label="Advanced settings" aria-expanded="false">⚙️</button>
                 </div>
             </div>
 
@@ -1335,27 +1381,27 @@
             <span class="slider-value">0dB</span>
         </div>
     </div>
-    <button id="savePresetBtn" class="btn" style="margin-top: 20px;">Save Current Preset</button>
-    <button id="exportPresetBtn" class="btn" style="margin-top: 10px;">Export Preset</button>
-    <button id="importPresetBtn" class="btn" style="margin-top: 10px;">Import Preset</button>
+    <button type="button" id="savePresetBtn" class="btn" style="margin-top: 20px;">Save Current Preset</button>
+    <button type="button" id="exportPresetBtn" class="btn" style="margin-top: 10px;">Export Preset</button>
+    <button type="button" id="importPresetBtn" class="btn" style="margin-top: 10px;">Import Preset</button>
     <input type="file" id="presetFileInput" accept=".json" style="display: none;">
 </div>
     <div class="log-toggle" id="logToggle">Show Log</div>
     <div class="log-panel" id="logPanel">
         <div class="log-header">
             <h4>Communication Log</h4>
-            <button class="btn" id="clearLogBtn" style="padding: 4px 8px; font-size: 10px; width: auto;">Clear</button>
+            <button type="button" class="btn" id="clearLogBtn" style="padding: 4px 8px; font-size: 10px; width: auto;">Clear</button>
         </div>
         <div class="debug-buttons-panel">
-            <button id="syncPresetNamesBtn" class="btn" disabled>Sync Preset Names</button>
-            <button id="syncModulesBtn" class="btn" disabled>Sync Modules</button>
-            <button id="syncUserIRsBtn" class="btn" disabled>Sync User IRs</button>
-            <button id="syncCloneAmpsBtn" class="btn" disabled>Sync Clone Amps</button>
-            <button id="syncGlobalsBtn" class="btn" disabled>Sync Global Settings</button>
+            <button type="button" id="syncPresetNamesBtn" class="btn" disabled>Sync Preset Names</button>
+            <button type="button" id="syncModulesBtn" class="btn" disabled>Sync Modules</button>
+            <button type="button" id="syncUserIRsBtn" class="btn" disabled>Sync User IRs</button>
+            <button type="button" id="syncCloneAmpsBtn" class="btn" disabled>Sync Clone Amps</button>
+            <button type="button" id="syncGlobalsBtn" class="btn" disabled>Sync Global Settings</button>
         </div>
         <div class="manual-command-panel">
             <input type="text" id="manualCommandInput" placeholder="Enter hex command...">
-            <button id="sendManualCommandBtn" class="btn">Send</button>
+            <button type="button" id="sendManualCommandBtn" class="btn">Send</button>
         </div>
         <div class="log-content" id="logContent"></div>
     </div>
@@ -1371,10 +1417,12 @@
         <input type="number" id="presetNumberInput" min="1" max="50">
     </div>
     <div style="display: flex; gap: 10px; margin-top: 15px;">
-        <button id="cancelSaveBtn" class="btn">Cancel</button>
-        <button id="confirmSaveBtn" class="btn btn-primary">Confirm & Save</button>
+        <button type="button" id="cancelSaveBtn" class="btn">Cancel</button>
+        <button type="button" id="confirmSaveBtn" class="btn btn-primary">Confirm & Save</button>
     </div>
 </div>
+
+<div id="toast-container" class="toast-container" aria-live="polite"></div>
 
 <div id="lockingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; text-align: center; color: white; font-size: 1.2em;">
     <div>
@@ -1393,8 +1441,8 @@
         </div>
     </div>
     <div style="display: flex; gap: 10px; margin-top: 15px;">
-        <button id="cancelUsbBtn" class="btn">Cancel (Use BLE)</button>
-        <button id="confirmUsbBtn" class="btn btn-primary" disabled>Connect via USB</button>
+        <button type="button" id="cancelUsbBtn" class="btn">Cancel (Use BLE)</button>
+        <button type="button" id="confirmUsbBtn" class="btn btn-primary" disabled>Connect via USB</button>
     </div>
 </div>
 
@@ -2311,7 +2359,7 @@
     { "name": "IR", "moduleId": 4, "effects": [401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 419, 420] },
     { "name": "EQ", "moduleId": 5, "effects": [501, 502, 503] },
     { "name": "FX2", "moduleId": 6, "effects": [101, 102, 103, 104, 116, 117, 118, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114] },
-    { "name": "DLY", "moduleId": 7, "effects": [701, 702, 703, 704, 705, 706, 707, 708, 709] },
+    { "name": "DLY", "moduleId": 7, "effects": [701, 702, 703, 704, 705, 706, 707, 708, 709], "tapTempo": true },
     { "name": "RVB", "moduleId": 8, "effects": [801, 802, 803, 804, 805, 806, 807, 808, 809, 810] },
     { "name": "Clone", "moduleId": 9, "effects": [901, 902, 903, 904, 905] }
   ]
@@ -11262,7 +11310,7 @@
 
                     if (!this.definitions || !this.commands) {
                         this.log('❌ Error: Hardcoded library data is missing.', 'error');
-                        alert('Error: Library data is missing. Check the script tag.');
+                        this.showToast('Error: Library data is missing. Check the script tag.', 'error');
                         return;
                     }
 
@@ -11363,7 +11411,9 @@
                          // Prevent the default browser action for the space bar (e.g., scrolling the page).
                          e.preventDefault(); 
 
-                         const tapButton = document.getElementById('tap-button-7');
+                         // Find the tap button of whichever module declares tap tempo support.
+                         const tapModuleId = this.definitions?.modules?.find(m => m.tapTempo)?.moduleId ?? 7;
+                         const tapButton = document.getElementById(`tap-button-${tapModuleId}`);
                          if (tapButton) {
                              // Add a class for a brief visual flash to give user feedback.
                              tapButton.classList.add('beat-flash');
@@ -11468,6 +11518,13 @@
                 });
 
                 this.patchListContainer.appendChild(item);
+            }
+
+            // Keeps the ARIA state of toggle switches/status indicators in sync with
+            // their visual .on class. Visual-only elements (status dots) are skipped.
+            _syncToggleAria(el) {
+                if (!el || el.getAttribute('role') !== 'switch') return;
+                el.setAttribute('aria-checked', String(el.classList.contains('on')));
             }
 
             updatePresetModifiedUI(isModified) {
@@ -11716,7 +11773,8 @@
                 this.logToggle.addEventListener('click', () => this.toggleLogPanel());
                 this.clearLogBtn.addEventListener('click', () => this.clearLog());
                 this.advancedSettingsBtn.addEventListener('click', () => {
-                    this.advancedSettingsPanel.classList.toggle('visible');
+                    const isVisible = this.advancedSettingsPanel.classList.toggle('visible');
+                    this.advancedSettingsBtn.setAttribute('aria-expanded', String(isVisible));
                 });
                 this.moduleElements.forEach(module => {
                     module.addEventListener('click', event => {
@@ -11878,6 +11936,7 @@
                         const enableToggle = document.getElementById(`module-enable-${moduleId}`);
                         if (enableToggle && !enableToggle.classList.contains('locked')) {
                             enableToggle.classList.toggle('on');
+                            this._syncToggleAria(enableToggle);
                             this.sendModuleState(moduleId, enableToggle.classList.contains('on'));
                         }
                         return;
@@ -11887,13 +11946,25 @@
                          if (target.id && target.id.startsWith('module-enable-')) {
                             const moduleId = parseInt(target.id.split('-')[2], 10);
                             target.classList.toggle('on');
+                            this._syncToggleAria(target);
                             this.sendModuleState(moduleId, target.classList.contains('on'));
                         } else {
                             target.classList.toggle('on');
+                            this._syncToggleAria(target);
                             this.onParameterChange(target);
                         }
                     }
                 });
+                // Keyboard support for the role="switch" toggle controls (Space/Enter).
+                document.body.addEventListener('keydown', event => {
+                    const target = event.target;
+                    if (!target?.classList?.contains('toggle-switch')) return;
+                    if (event.key !== ' ' && event.key !== 'Enter') return;
+                    if (target.classList.contains('locked') || target.id.startsWith('amp-clone-mode')) return;
+                    event.preventDefault();
+                    target.click();
+                });
+
                 document.body.addEventListener('change', event => {
                     const target = event.target;
 
@@ -11957,7 +12028,11 @@
                 }
 
                 effectDef.alg.forEach(param => {
-                    const label = `<div class="control-label">${param.name}</div>`;
+                    // Each control gets a real <label for> plus an aria-label, so screen
+                    // readers (and clicks on the label) work for sliders/toggles/selects.
+                    const controlId = `param-${logicalModuleId}-${fxId}-${param.algId}`;
+                    const label = `<label class="control-label" for="${controlId}">${param.name}</label>`;
+                    const aria = `aria-label="${param.name}" id="${controlId}"`;
                     let controlHtml = '';
                     const dataAttributes = `data-module-id="${logicalModuleId}" data-fx-id="${fxId}" data-alg-id="${param.algId}"`;
 
@@ -11967,14 +12042,17 @@
                             controlHtml = `
                                 ${label}
                                 <div class="slider-container">
-                                    <input type="range" min="${param.min}" max="${param.max}" value="${param.defaultValue}" step="${param.step || 1}" class="slider" ${dataAttributes}>
+                                    <input type="range" ${aria} min="${param.min}" max="${param.max}" value="${param.defaultValue}" step="${param.step || 1}" class="slider" ${dataAttributes}>
                                     <span class="slider-value">${param.defaultValue}</span>
                                 </div>`;
                             break;
                         case 1:
+                            // A div cannot be labelled by <label for>, use role=switch + aria-checked.
                             controlHtml = `
-                                ${label}
-                                <div class="toggle-switch ${param.defaultValue ? 'on' : ''}" ${dataAttributes}></div>`;
+                                <span class="control-label" id="${controlId}-label">${param.name}</span>
+                                <div class="toggle-switch ${param.defaultValue ? 'on' : ''}" role="switch" tabindex="0"
+                                     aria-checked="${param.defaultValue ? 'true' : 'false'}" aria-labelledby="${controlId}-label"
+                                     ${dataAttributes}></div>`;
                             break;
                         case 2:
                             const options = param.options.map((opt, index) =>
@@ -11982,31 +12060,33 @@
                             ).join('');
                             controlHtml = `
                                 ${label}
-                                <select class="dropdown-select" ${dataAttributes}>${options}</select>`;
+                                <select ${aria} class="dropdown-select" ${dataAttributes}>${options}</select>`;
                             break;
                     }
                     content += `<div class="control-row">${controlHtml}</div>`;
                 });
 
-                // ✨ CHANGE 1: If it's the DELAY module, append the tap tempo HTML to the 'content' string.
-                if (moduleId == '7') {
+                // The data drives this: any module flagged with "tapTempo": true gets the
+                // tap tempo widget (currently the DLY module).
+                const hasTapTempo = this.supportsTapTempo(moduleId);
+                if (hasTapTempo) {
                     const tapTempoHTML = `
                         <div class="tap-tempo-section">
                             <div class="tap-grid">
                                 <div class="tap-display">
-                                    <input type="number" id="tap-bpm-input-7" class="bpm-input" value="120.0" min="20" max="300" step="0.1">
+                                    <input type="number" id="tap-bpm-input-${moduleId}" class="bpm-input" value="120.0" min="20" max="300" step="0.1">
                                     <span class="display-label">BPM</span>
                                 </div>
                                 <div class="tap-display">
-                                    <span id="delay-time-ms-7" class="bpm-input">500ms</span>
+                                    <span id="delay-time-ms-${moduleId}" class="bpm-input">500ms</span>
                                     <span class="display-label">Calculated delay time</span>
                                 </div>
-                                <button id="tap-button-7" class="tap-button">TAP TEMPO</button>
-                                <div id="note-divisions-7" class="note-divisions">
-                                    <button class="note-btn" data-multiplier="0.5">1/8</button>
-                                    <button class="note-btn" data-multiplier="0.75">1/8 dotted</button>
-                                    <button class="note-btn active" data-multiplier="1">1/4</button>
-                                    <button class="note-btn" data-multiplier="2">1/2</button>
+                                <button type="button" id="tap-button-${moduleId}" class="tap-button">TAP TEMPO</button>
+                                <div id="note-divisions-${moduleId}" class="note-divisions">
+                                    <button type="button" class="note-btn" data-multiplier="0.5">1/8</button>
+                                    <button type="button" class="note-btn" data-multiplier="0.75">1/8 dotted</button>
+                                    <button type="button" class="note-btn active" data-multiplier="1">1/4</button>
+                                    <button type="button" class="note-btn" data-multiplier="2">1/2</button>
                                 </div>
                             </div>
                         </div>
@@ -12016,9 +12096,9 @@
 
                 paramsSection.innerHTML = content;
 
-                // ✨ CHANGE 2: After rendering, if it was the DELAY module, call the setup logic.
-                if (moduleId == '7') {
-                    this.setupTapTempo();
+                // After rendering, wire up the tap tempo widget if it was added.
+                if (hasTapTempo) {
+                    this.setupTapTempo(moduleId);
                 }
 
                 // After creating the controls, initialize the progress style for the new sliders.
@@ -12027,10 +12107,16 @@
                 });
             }
 
-            setupTapTempo() {
-                const tapButton = document.getElementById('tap-button-7');
-                const bpmInput = document.getElementById('tap-bpm-input-7');
-                const divisionButtonsContainer = document.getElementById('note-divisions-7');
+            // True when the module definition opts into the tap tempo widget.
+            supportsTapTempo(moduleId) {
+                const moduleDef = this.definitions?.modules?.find(m => m.moduleId === parseInt(moduleId, 10));
+                return Boolean(moduleDef?.tapTempo);
+            }
+
+            setupTapTempo(moduleId = 7) {
+                const tapButton = document.getElementById(`tap-button-${moduleId}`);
+                const bpmInput = document.getElementById(`tap-bpm-input-${moduleId}`);
+                const divisionButtonsContainer = document.getElementById(`note-divisions-${moduleId}`);
 
                 if (!tapButton || !bpmInput || !divisionButtonsContainer) {
                     return;
@@ -12041,8 +12127,8 @@
                 let timeoutId = null, beatIntervalId = null;
 
                 const updateDelayFromBpm = () => {
-                    const delayTimeSlider = document.querySelector('#module-params-7 .slider[data-alg-id="1"]');
-                    const delayTimeDisplay = document.getElementById('delay-time-ms-7');
+                    const delayTimeSlider = document.querySelector(`#module-params-${moduleId} .slider[data-alg-id="1"]`);
+                    const delayTimeDisplay = document.getElementById(`delay-time-ms-${moduleId}`);
                     if (!delayTimeSlider || !delayTimeDisplay) return;
 
                     const activeMultiplierBtn = divisionButtonsContainer.querySelector('.note-btn.active');
@@ -12153,6 +12239,7 @@
                 const enableToggle = document.getElementById(`module-enable-${moduleId}`);
                 const moduleElement = document.querySelector(`[data-module-id="${moduleId}"]`);
                 if (enableToggle && statusElement && moduleElement) {
+                    this._syncToggleAria(enableToggle);
                     const isOn = enableToggle.classList.contains('on');
                     statusElement.classList.toggle('on', isOn);
                     moduleElement.classList.toggle('disabled', !isOn);
@@ -12395,7 +12482,7 @@
 
             confirmUsbDeviceSelection() {
                 if (!this.selectedUsbDevice) {
-                    alert('Please select a USB MIDI device first');
+                    this.showToast('Please select a USB MIDI device first', 'warning');
                     return;
                 }
 
@@ -12462,7 +12549,7 @@
                     this.runInitialSyncSequence();
                 } catch (error) {
                     this.log(`Bluetooth connection failed: ${error.message}`, 'error');
-                    alert('Failed to connect to device. Please try again.');
+                    this.showToast('Failed to connect to device. Please try again.', 'error');
                 }
             }
 
@@ -12695,7 +12782,7 @@
 
             showSaveModal() {
                 if (!this.isConnected) {
-                    alert("Please connect to the device first.");
+                    this.showToast('Please connect to the device first.', 'warning');
                     return;
                 }
                 // Pre-fill the dialog with the currently selected patch info
@@ -13025,7 +13112,7 @@
             async importPreset() {
                 try {
                     if (!this.isConnected) {
-                        alert("Please connect to the device first.");
+                        this.showToast('Please connect to the device first.', 'warning');
                         return;
                     }
 
@@ -13059,11 +13146,11 @@
                         await this.syncPresetStateToDevice(fullPresetData);
 
                         this.log(`✅ Preset imported successfully: ${jsonData.presetName}`, 'success');
-                        alert(`Preset "${jsonData.presetName}" imported and synced to device!`);
+                        this.showToast(`Preset "${jsonData.presetName}" imported and synced to device!`, 'success');
 
                     } catch (error) {
                         this.log(`❌ Import error: ${error.message}`, 'error');
-                        alert(`Failed to import preset: ${error.message}`);
+                        this.showToast(`Failed to import preset: ${error.message}`, 'error', 8000);
                     }
 
                     // Reset file input
@@ -13334,7 +13421,7 @@
 
                 } catch (error) {
                     this.log(`❌ Auto-sync sequence failed: ${error.message}`, 'error');
-                    alert(`Initial sync failed: ${error.message}. You may need to sync manually.`);
+                    this.showToast(`Initial sync failed: ${error.message}. You may need to sync manually.`, 'error', 8000);
                     // If it fails, we must still reset the flag and hide the overlay
                     this.finishInitialSync();
                 } finally {
@@ -13904,6 +13991,7 @@
                                     const enableToggle = document.getElementById(`module-enable-${toggleId}`);
                                     if (enableToggle) {
                                         enableToggle.classList.toggle('on', value === 1);
+                                        this._syncToggleAria(enableToggle);
                                         this.updateModuleStatus(toggleId);
                                     }
                                 });
@@ -13974,6 +14062,7 @@
                                             this.updateSliderProgress(control);
                                         } else if (control.classList.contains('toggle-switch')) {
                                             control.classList.toggle('on', decodedValue === 1);
+                                            this._syncToggleAria(control);
                                         } else if (control.tagName === 'SELECT') {
                                             control.value = decodedValue;
                                         }
@@ -14128,7 +14217,7 @@
                             if (isAutomated) {
                                reject(new Error(errorMsg));
                             } else {
-                               alert('Preset name sync failed to complete.');
+                               this.showToast('Preset name sync failed to complete.', 'error');
                                resolve(); // Resolve to not leave the UI in a broken promise state.
                             }
                         }
@@ -14557,6 +14646,7 @@
                                 const enableToggle = document.getElementById(`module-enable-${toggleId}`);
                                 if (enableToggle) {
                                     enableToggle.classList.toggle('on', isOn);
+                                    this._syncToggleAria(enableToggle);
                                     this.updateModuleStatus(toggleId);
                                 }
                             });
@@ -14674,6 +14764,7 @@
                                         } 
                                         else if (control.classList.contains('toggle-switch')) {
                                             control.classList.toggle('on', value === 1);
+                                            this._syncToggleAria(control);
                                         } 
                                         else if (control.tagName === 'SELECT') {
                                             control.value = value;
@@ -14849,6 +14940,13 @@
                 this.logContent.scrollTop = this.logContent.scrollHeight;
             }
 
+            // Non-blocking notification. window.alert() blocks the JS thread and therefore
+            // also pauses BLE notification handling, so it must not be used mid-session.
+            showToast(message, type = 'info', timeoutMs = 4000) {
+                if (typeof showToast === 'function') return showToast(message, type, timeoutMs);
+                if (this.logContent) this.log(message, type);
+            }
+
             clearLog() {
                 if (this.logContent) { this.logContent.innerHTML = ''; }
             }
@@ -14982,6 +15080,32 @@
         // HOVER TO FOCUS AND SCROLL LOGIC
         // -----------------------------------------------------
         let currentlyHoveredControl = null;
+
+        // -----------------------------------------------------
+        // NON-BLOCKING NOTIFICATIONS (used instead of alert())
+        // -----------------------------------------------------
+        function showToast(message, type = 'info', timeoutMs = 4000) {
+            const container = document.getElementById('toast-container');
+            if (!container) {
+                console.warn(`[${type.toUpperCase()}] ${message}`);
+                return;
+            }
+
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            const remove = () => {
+                toast.classList.add('leaving');
+                setTimeout(() => toast.remove(), 250);
+            };
+            setTimeout(remove, timeoutMs);
+
+            // Dismiss on click, in case the user wants it gone sooner.
+            toast.addEventListener('click', remove, { once: true });
+        }
 
         // Helper function to dispatch 'input' AND 'change' events to simulate native behavior
         function triggerControlUpdate(element) {
