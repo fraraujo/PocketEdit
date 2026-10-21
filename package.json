@@ -1,0 +1,13 @@
+{
+  "name": "pocketedit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser editor for the Sonicake Pocket Master multi-effects pedal",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "check": "node tools/build.mjs --check",
+    "test": "node --test \"tools/tests/*.test.mjs\"",
+    "prepublishOnly": "npm run build && npm test"
+  }
+}

@@ -5,6 +5,32 @@
 This single, portable HTML file unlocks the full potential of your device, making tone creation and management faster and more intuitive than ever before.
 It was created as a fun side project using 99% AI programming logic and 100% hard labour reverse engineering, learning about BLE/HCI snooping and understanding how this device works by looking at logs.
 
+## **Repository layout**
+
+The published `index.html` is a build artifact: it is generated from the sources below
+and still runs offline with a double-click, with no external requests.
+
+| Path | Contents |
+| --- | --- |
+| `src/template.html` | Markup, CSS and the script shell |
+| `src/app.js` | Application code (UI, BLE/USB transport, protocol) |
+| `data/modules.json` | Effect/module definitions (names, parameters, ranges) |
+| `data/commands.json` | SysEx command tables |
+| `index.html` | **Generated** - do not edit by hand |
+| `tools/` | Reverse-engineering helpers, build script and tests |
+
+Editing workflow (Node 18+ required):
+
+```bash
+node tools/build.mjs     # regenerate index.html from src/ and data/
+node tools/build.mjs --check   # verify index.html is up to date (CI)
+node --test "tools/tests/*.test.mjs"   # or: npm test
+```
+
+Tests run the real `src/app.js` in Node with a small DOM stub, so the protocol helpers
+(CRC, name/dB encoding, preset payload, ACK handling, write queue) are covered without
+a browser or a pedal.
+
 
 ![screenshot](img/gui.jpg)
 
