@@ -45,7 +45,7 @@ Getting started with PocketEdit is simple.
 
 1.  **Open the App:** Use the [Online Link](https://suckyble.github.io/PocketEdit/) or open a local copy of the `index.html`.
 2.  **Connect your Device:** Click the **"Connect"** button in the top-left sidebar.
-4.  **Choose Mode:** The app will default to **USB MIDI**. If you prefer wireless or USB is unavailable, select **"Use Bluetooth"** (Chromium based browser required!).
+3.  **Choose Mode:** The app will default to **USB MIDI**. If you prefer wireless or USB is unavailable, select **"Use Bluetooth"** (Chromium based browser required!).
 4.  **Pairing:** If using Bluetooth, select **"Sonic Master BLE"** from the browser popup and click **"Pair"**.
 5.  **Automatic Sync:** A loading overlay will appear while the app syncs your device data. Once it disappears, you're ready to edit!
    
