@@ -10,12 +10,6 @@ It was created as a fun side project using 99% AI programming logic and 100% har
 
 ---
 
-## **Online accessing the App**
-
-You can now directly access PocketEdit online!
-The latest version is always available directly here:
-**[https://suckyble.github.io/PocketEdit/](https://suckyble.github.io/PocketEdit/)**
-
 ## **Features**
 
 * **Dual Connectivity:** Now supports **USB WebMIDI** (default) with a fallback to **Bluetooth**. USB MIDI support allows the editor to work in **Firefox** and other non-Chromium browsers. (thanks to @hnikolov)
@@ -43,7 +37,7 @@ Before you begin, please ensure you have the following:
 
 Getting started with PocketEdit is simple.
 
-1.  **Open the App:** Use the [Online Link](https://suckyble.github.io/PocketEdit/) or open a local copy of the `index.html`.
+1.  **Open the App:** Open a local copy of the `index.html` in your browser (or serve the folder with any static web server).
 2.  **Connect your Device:** Click the **"Connect"** button in the top-left sidebar.
 3.  **Choose Mode:** The app will default to **USB MIDI**. If you prefer wireless or USB is unavailable, select **"Use Bluetooth"** (Chromium based browser required!).
 4.  **Pairing:** If using Bluetooth, select **"Sonic Master BLE"** from the browser popup and click **"Pair"**.
