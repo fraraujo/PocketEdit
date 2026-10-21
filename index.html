@@ -9898,6 +9898,10 @@
         };
 
         class SonicakeBLEEditor {
+            // Device reply packets used for acknowledgements
+            static SUCCESS_ACK_CODE = '8080F00B02000100000003010400080000F7';
+            static NACK_CODE = '8080F00B05000100000003010400080001F7';
+
             constructor() {
                 this.device = null;
                 this.characteristic = null;
@@ -9914,6 +9918,12 @@
                 this.ackPromiseResolve = null;
                 this.isSyncingState = false;
                 this.syncTimeoutId = null;
+
+                // Command transport: all writes go through one serialized queue so that
+                // rapid-fire commands can never interleave on the GATT characteristic.
+                this._writeQueue = Promise.resolve();
+                this.lastSendFailed = false;
+                this._reportedSendFailure = false;
 
                 // USB MIDI connection properties
                 this.connectionType = null; // 'ble' or 'usb'
@@ -11282,54 +11292,6 @@
                 });
             }
 
-            async loadFiles() {
-                    this.log('Attempting to load library files...', 'info');
-                    const moduleFileInput = document.getElementById('moduleFile');
-                    const commandFileInput = document.getElementById('commandFile');
-
-                    try {
-                        const [definitionsContent, commandsContent] = await Promise.all([
-                            this.loadFileContent(moduleFileInput.files[0]),
-                            this.loadFileContent(commandFileInput.files[0])
-                        ]);
-
-                        this.definitions = definitionsContent;
-                        this.commands = commandsContent;
-                        this.log('✅ Libraries loaded successfully from files.', 'info');
-
-                        this.buildFxIdMaps();
-                        this.populatePatchLists();
-                        this.populateUIFromDefinitions();
-                        this.setupControlListeners();
-                        this.setupAmpCloneMode();
-                        this.setupDragAndDrop();
-
-                        document.getElementById('file-loader-container').style.display = 'none';
-                        document.getElementById('editor-container').style.display = 'flex';
-
-                        // THE CODE BLOCK THAT CAUSED THE ISSUE HAS BEEN REMOVED FROM HERE.
-                        // We will now perform the initial UI setup without syncing.
-                        const firstUserPatch = document.querySelector('#patchListContainer .patch-item');
-                        if (firstUserPatch) {
-                            // Just update the text in the top bar without syncing from the device yet.
-                            const baseName = firstUserPatch.dataset.baseName;
-                            const displayText = firstUserPatch.textContent;
-                            const displayName = displayText.includes(': ') ? displayText.split(': ')[1] : 'Preset';
-                            document.getElementById('patchNumber').textContent = baseName;
-                            document.getElementById('patchName').textContent = displayName;
-                            firstUserPatch.classList.add('selected');
-                        }
-                        this.selectModule(0); // Select the first module view by default
-                        document.querySelectorAll('.slider').forEach(slider => {
-                            this.updateSliderProgress(slider);
-                        });
-
-                    } catch (error) {
-                        this.log(`❌ Error loading files: ${error.message}`, 'error');
-                        alert(`Error loading files: ${error.message}`);
-                    }
-                }
-
             buildFxIdMaps() {
                 this.log('Building dynamic signature-to-fxId maps...', 'info');
                 const nameToFxId = {};
@@ -11529,6 +11491,25 @@
                 const newPatchBaseName = element.dataset.baseName;
                 const currentPatchBaseName = document.getElementById('patchNumber').textContent;
 
+                // Re-entrancy guard: a device preset-change notification can arrive while
+                // this function is still waiting for an ACK. Starting a second run would
+                // consume the ACK of the first one and leave the patch list locked forever.
+                if (newPatchBaseName !== currentPatchBaseName) {
+                    if (this._updatePatchInfoBusy) {
+                        this.log(`Preset selection to ${newPatchBaseName} ignored: a preset change is already in progress.`, 'info');
+                        return;
+                    }
+                    this._updatePatchInfoBusy = true;
+                }
+
+                try {
+                    await this._applyPatchInfo(element, sendCommand, newPatchBaseName, currentPatchBaseName);
+                } finally {
+                    this._updatePatchInfoBusy = false;
+                }
+            }
+
+            async _applyPatchInfo(element, sendCommand, newPatchBaseName, currentPatchBaseName) {
                 if (newPatchBaseName !== currentPatchBaseName) {
                     // This is a generic "request status" command. The device knows which preset is active.
                     const requestStatusCommand = '8080F0010500010000000201020405F7';
@@ -11552,9 +11533,13 @@
                 if (this.isConnected && sendCommand) {
                     this.writeCommand(element.dataset.code);
                     this.log('Waiting for preset change ACK...', 'info');
-                    await this.waitForAck(); 
-                    this.log('ACK received. Proceeding with sync.', 'info');
-                    this.syncCurrentPresetState(); 
+                    const ackReceived = await this.waitForAck(SonicakeBLEEditor.SUCCESS_ACK_CODE);
+                    if (ackReceived) {
+                        this.log('ACK received. Proceeding with sync.', 'info');
+                    } else {
+                        this.log('No ACK for the preset change; syncing anyway.', 'warning');
+                    }
+                    this.syncCurrentPresetState();
                 }
 
                 // Reset modified state for the new preset
@@ -11789,6 +11774,9 @@
 
                             clearTimeout(slider.debounceTimer);
                             slider.debounceTimer = setTimeout(() => {
+                                // The panels are rebuilt on preset/effect changes; never send
+                                // a stale value captured from a slider that no longer exists.
+                                if (!slider.isConnected) return;
                                 const command = this.commands.globalCommands?.[paramName]?.[value];
                                 if (command) {
                                     this.log(`Global Change: ${paramName} = ${value}`, 'info');
@@ -11805,6 +11793,8 @@
                         }
                         clearTimeout(slider.debounceTimer);
                         slider.debounceTimer = setTimeout(() => {
+                            // Skip if this slider was replaced by a UI rebuild in the meantime.
+                            if (!slider.isConnected) return;
                             this.onParameterChange(slider);
                         }, 50);
                     }
@@ -12359,15 +12349,28 @@
                     const inputName = pair.inputName || 'Unknown';
                     const outputName = pair.outputName || 'Unknown';
 
-                    deviceItem.innerHTML = `
-                        <div class="usb-device-pair-title">🎛️ ${deviceName}</div>
-                        <div class="usb-device-io">
-                            <span class="usb-device-io-label">Input:</span> ${inputName}
-                        </div>
-                        <div class="usb-device-io">
-                            <span class="usb-device-io-label">Output:</span> ${outputName}
-                        </div>
-                    `;
+                    // Device names come from the OS/browser and are untrusted input:
+                    // build the rows with textContent instead of interpolating HTML.
+                    const makeRow = (className, labelText, valueText) => {
+                        const row = document.createElement('div');
+                        row.className = className;
+                        if (labelText) {
+                            const label = document.createElement('span');
+                            label.className = 'usb-device-io-label';
+                            label.textContent = labelText;
+                            row.appendChild(label);
+                        }
+                        row.appendChild(document.createTextNode(valueText));
+                        return row;
+                    };
+
+                    const titleRow = document.createElement('div');
+                    titleRow.className = 'usb-device-pair-title';
+                    titleRow.textContent = `🎛️ ${deviceName}`;
+
+                    deviceItem.appendChild(titleRow);
+                    deviceItem.appendChild(makeRow('usb-device-io', 'Input:', inputName));
+                    deviceItem.appendChild(makeRow('usb-device-io', 'Output:', outputName));
 
                     deviceItem.addEventListener('click', () => this.selectUsbDevice(index, deviceItem));
                     this.usbDeviceList.appendChild(deviceItem);
@@ -12498,8 +12501,8 @@
                 // Check if this is a multi-packet response
                 // Bytes [3:4] = total number of packets (16-bit big-endian)
                 // Bytes [5:6] = current packet number (16-bit big-endian)
-                const totalPackets = (message[3] << 4) | message[4];
-                const currentPacket = (message[5] << 4) | message[6];
+                const totalPackets = (message[3] << 8) | message[4];
+                const currentPacket = (message[5] << 8) | message[6];
 
                 const messageHex = Array.from(message).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
                 this.log(`USB SysEx: packets ${currentPacket + 1}/${totalPackets} - ${messageHex}`, 'debug');
@@ -12582,11 +12585,12 @@
                         // Clean up
                         delete this.usbMultiPacketResponses[responseId];
                     } else {
-                        // Set a timeout in case we don't receive all packets
+                        // Set a timeout in case we don't receive all packets. Only drop the
+                        // entry we are watching: the id may have been reused by a newer response.
                         setTimeout(() => {
-                            if (this.usbMultiPacketResponses && this.usbMultiPacketResponses[responseId]) {
-                                const received = Object.keys(this.usbMultiPacketResponses[responseId].packets).length;
-                                this.log(`⚠️ Timeout waiting for multi-packet response [${responseId}]: received ${received}/${totalPackets}`, 'warn');
+                            if (this.usbMultiPacketResponses && this.usbMultiPacketResponses[responseId] === response) {
+                                const received = Object.keys(response.packets).length;
+                                this.log(`⚠️ Timeout waiting for multi-packet response [${responseId}]: received ${received}/${totalPackets}`, 'warning');
                                 delete this.usbMultiPacketResponses[responseId];
                             }
                         }, 2000);
@@ -12635,31 +12639,50 @@
                 this.statusText.textContent = statusLabel;
             }
 
-            async writeCommand(commandString) {
-                if (!this.isConnected) {
-                    this.log('Device not connected', 'error');
-                    return;
-                }
-
-                try {
-                    const hexBytes = commandString.match(/.{1,2}/g).map(byte => parseInt(byte, 16));
-                    const command = new Uint8Array(hexBytes);
-                    this.log(`Sending: ${commandString.toUpperCase()}`, 'sent');
-
-                    // Send via USB MIDI or BLE depending on connection type
-                    if (this.connectionType === 'usb' && this.midiOutput) {
-                        // Send via Web MIDI API (remove 8080 header - USB MIDI adds it automatically)
-                        const commandWithoutHeader = command.slice(2); // Remove first 2 bytes (8080)
-                        this.midiOutput.send(commandWithoutHeader);
-                    } else if (this.connectionType === 'ble' && this.characteristic) {
-                        // Send via BLE GATT characteristic (keep 8080 header)
-                        await this.characteristic.writeValueWithoutResponse(command);
-                    } else {
-                        this.log('No valid connection endpoint available', 'error');
+            // Serialized command transport. Every send is chained onto this._writeQueue so
+            // that overlapping UI events (slider debounce, drag-and-drop, mode switches) can
+            // never interleave their writes on the BLE GATT characteristic or the MIDI port.
+            // While this.isApplyingState is set (UI is being updated from the device or a
+            // preset file), commands are suppressed here instead of by monkey-patching.
+            writeCommand(commandString) {
+                const run = async () => {
+                    if (this.isApplyingState) return;
+                    if (!this.isConnected) {
+                        this.log('Device not connected', 'error');
+                        return;
                     }
-                } catch (error) {
-                    this.log(`Error sending command: ${error.message}`, 'error');
-                }
+
+                    try {
+                        const hexBytes = commandString.match(/.{1,2}/g).map(byte => parseInt(byte, 16));
+                        const command = new Uint8Array(hexBytes);
+                        this.log(`Sending: ${commandString.toUpperCase()}`, 'sent');
+
+                        // Send via USB MIDI or BLE depending on connection type
+                        if (this.connectionType === 'usb' && this.midiOutput) {
+                            // Send via Web MIDI API (remove 8080 header - USB MIDI adds it automatically)
+                            const commandWithoutHeader = command.slice(2); // Remove first 2 bytes (8080)
+                            this.midiOutput.send(commandWithoutHeader);
+                        } else if (this.connectionType === 'ble' && this.characteristic) {
+                            // Send via BLE GATT characteristic (keep 8080 header)
+                            await this.characteristic.writeValueWithoutResponse(command);
+                        } else {
+                            this.log('No valid connection endpoint available', 'error');
+                        }
+                        this.lastSendFailed = false;
+                    } catch (error) {
+                        this.lastSendFailed = true;
+                        this.log(`Error sending command: ${error.message}`, 'error');
+                        if (/GATT operation already in progress/i.test(error.message || '') && !this._reportedSendFailure) {
+                            this._reportedSendFailure = true;
+                            this.log('GATT was busy: a command may have been dropped. Use the manual sync buttons to re-sync.', 'warning');
+                        }
+                    }
+                };
+
+                // Errors are handled inside run(), so the chain never rejects/stops.
+                const result = this._writeQueue.then(run, run);
+                this._writeQueue = result;
+                return result;
             }
 
             sendManualCommand() {
@@ -13224,21 +13247,63 @@
                 }
             }
 
-            waitForAck() {
+            // Waits for a device acknowledge. `expected` is the exact packet (or a
+            // predicate) that counts as the ACK; anything else is ignored, so unrelated
+            // notifications cannot resolve the wait. Concurrent waiters are queued FIFO
+            // and every waiter is always settled by its own timeout.
+            waitForAck(expected = null, timeoutMs = 500) {
+                // 500 ms: an ACK for a preset save over BLE can take a while.
                 return new Promise((resolve) => {
-                    const timeout = setTimeout(() => {
-                        if (this.ackPromiseResolve) {
-                            this.ackPromiseResolve = null;
-                            resolve(false); // Resolve with false on timeout
-                        }
-                    }, 500); // Was 200ms timeout for an ACK, ~500ms is needed for saving preset via BLE
+                    const entry = { resolve, expected };
+                    this._ackWaiters = this._ackWaiters || [];
+                    this._ackWaiters.push(entry);
 
-                    this.ackPromiseResolve = (success = true) => {
-                        clearTimeout(timeout);
-                        this.ackPromiseResolve = null;
+                    const settle = (success) => {
+                        if (entry.settled) return false;
+                        entry.settled = true;
+                        clearTimeout(entry.timer);
+                        const idx = this._ackWaiters.indexOf(entry);
+                        if (idx !== -1) this._ackWaiters.splice(idx, 1);
                         resolve(success);
+                        return true;
                     };
+                    entry.settle = settle;
+
+                    const matchesExpected = (hex) => {
+                        if (expected == null) return true;
+                        if (typeof expected === 'function') return expected(hex);
+                        return hex === expected;
+                    };
+                    // Only an explicit NACK fails the wait early; other packets are ignored.
+                    const isNack = (hex) => hex === SonicakeBLEEditor.NACK_CODE;
+
+                    // Returns true when this packet belongs to the ACK handshake:
+                    // - expected ACK -> resolve(true)
+                    // - NACK         -> resolve(false)
+                    // Anything else returns false and is ignored by the wait; device state
+                    // updates also arrive while waiting and must not count as an ACK.
+                    entry.matches = (hex) => {
+                        if (matchesExpected(hex)) {
+                            settle(true);
+                            return true;
+                        }
+                        if (isNack(hex)) {
+                            settle(false);
+                            return true;
+                        }
+                        return false;
+                    };
+
+                    entry.timer = setTimeout(() => settle(false), timeoutMs);
                 });
+            }
+
+            // Called from handleNotification: offer the packet to the oldest waiter.
+            // Returns true only if the packet was part of the ACK handshake.
+            _dispatchAck(hexString) {
+                const waiter = this._ackWaiters?.[0];
+                if (!waiter) return false;
+                return waiter.matches(hexString);
             }
 
 
@@ -13271,19 +13336,53 @@
                     this.log(`❌ Auto-sync sequence failed: ${error.message}`, 'error');
                     alert(`Initial sync failed: ${error.message}. You may need to sync manually.`);
                     // If it fails, we must still reset the flag and hide the overlay
-                    this.isInitialSyncing = false;
-                    overlay.style.display = 'none';
+                    this.finishInitialSync();
+                } finally {
+                    // Safety net: if any step resolved without its response ever arriving,
+                    // never leave the user stuck behind the overlay or keep the flag set
+                    // (a stuck flag would silently disable the "unsaved preset" warning).
+                    setTimeout(() => this.finishInitialSync(), 15000);
                 }
             }
 
+            // Single, idempotent completion point for the initial sync sequence.
+            // Safe to call from several places (dump handler, state apply, timeouts).
+            finishInitialSync() {
+                if (!this.isInitialSyncing) return;
 
-            syncGlobalSettings(isAutomated = false) {
-                return new Promise(async (resolve, reject) => {
-                    if (!this.isConnected) return isAutomated ? reject(new Error('Not connected')) : resolve();
-                    this.log('Requesting global settings...', 'info');
-                    this.isWaitingForGlobals = true;
+                this.isInitialSyncing = false;
+                this.unlockPatchList();
 
-                    const timeout = setTimeout(() => {
+                const overlay = this.lockingOverlay || document.getElementById('lockingOverlay');
+                if (overlay) {
+                    overlay.style.display = 'none'; // Hide the sync overlay
+
+                    // Restore the overlay text for the save function
+                    const titleEl = overlay.querySelector('p:first-child');
+                    const subTextEl = overlay.querySelector('p:last-child');
+                    if (titleEl) titleEl.textContent = 'Trying to save preset...';
+                    if (subTextEl) subTextEl.textContent = 'This could take up to 2 minutes!';
+                }
+
+                this.log('✅ Initial auto-sync sequence complete.', 'info');
+            }
+
+
+            // Note: these sync methods used `new Promise(async (resolve, reject) => ...)`.
+            // They are now regular async methods: the awaited request/promise pair keeps the
+            // same behaviour, but an exception thrown before the first await can no longer be
+            // swallowed by the executor and leave the caller waiting forever.
+            async syncGlobalSettings(isAutomated = false) {
+                if (!this.isConnected) {
+                    if (isAutomated) throw new Error('Not connected');
+                    return;
+                }
+                this.log('Requesting global settings...', 'info');
+                this.isWaitingForGlobals = true;
+
+                let timeout = null;
+                const request = new Promise((resolve, reject) => {
+                    timeout = setTimeout(() => {
                         this.isWaitingForGlobals = false;
                         this.globalSettingsPromiseResolve = null;
                         if (isAutomated) reject(new Error('Global settings sync timed out.'));
@@ -13296,9 +13395,10 @@
                         this.globalSettingsPromiseResolve = null;
                         resolve();
                     };
-
-                    await this.writeCommand('8080F00B0900010000000201020100F7');
                 });
+
+                await this.writeCommand('8080F00B0900010000000201020100F7');
+                await request;
             }
 
             decodeDbValue(byte1Hex, byte2Hex) {
@@ -13522,7 +13622,7 @@
                     const outSysEx = "8080f0" + expandedCRC + finalPayload + "f7";
 
                     await this.writeCommand(outSysEx);
-                    const wasSuccessful = await this.waitForAck();
+                    const wasSuccessful = await this.waitForAck(SonicakeBLEEditor.SUCCESS_ACK_CODE);
 
                     if (wasSuccessful) {
                         this.log(`✅ PRESET SAVED! Checksum: ${crc8.toUpperCase()}`, 'success');
@@ -13534,7 +13634,11 @@
                     }
 
                     if (!wasSaved) {
-                        this.log('Save failed: No valid checksum found.', 'error');
+                        if (this.lastSendFailed) {
+                            this.log('Save failed: the command could not be sent to the device. Try again.', 'error');
+                        } else {
+                            this.log('Save failed: no ACK from the device (timeout or NACK). The checksum itself is not the problem.', 'error');
+                        }
                     }
 
                 } catch (error) {
@@ -13548,7 +13652,7 @@
             handleNotification(event) {
                 const data = new Uint8Array(event.target.value.buffer);
                 const hexString = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-                const SUCCESS_ACK_CODE = "8080F00B02000100000003010400080000F7";
+                const SUCCESS_ACK_CODE = SonicakeBLEEditor.SUCCESS_ACK_CODE;
 
                 if (hexString === '8080F0070A000100000003010204050001F7') {
                     if (!this.isPresetModified) {
@@ -13576,14 +13680,9 @@
                       return;
                   }
 
-                if (this.ackPromiseResolve) {
-                    if (this.isBruteForcing) {
-                        if (hexString === SUCCESS_ACK_CODE) {
-                            this.ackPromiseResolve(true);
-                        }
-                    } else {
-                        this.ackPromiseResolve(true);
-                    }
+                // Feed the ACK/NACK to the pending waiter (if any). Unrelated packets are
+                // ignored by it, so dot-state updates etc. no longer resolve a wait.
+                if (this._dispatchAck(hexString)) {
                     return;
                 }
 
@@ -13615,6 +13714,9 @@
                 }
 
                 if (this.isWaitingForPresetDump && hexString.startsWith('8080F0') && hexString.endsWith('F7') && hexString.length > 50) {
+                    // Data is arriving: disable the timeout so it cannot fire mid-decode.
+                    clearTimeout(this.syncTimeoutId);
+                    this.syncTimeoutId = null;
                     this.dumpPackets.push(hexString);
                     if (this.dumpPackets.length === 5 || this.connectionType === 'usb') {
 
@@ -13651,18 +13753,8 @@
                                 this.log(`Packet ${index + 1}: ${packet}`, 'received');
                             });
 
-                            // --- THIS BLOCK IS THE MAIN CHANGE ---
                             // The entire sync process is now complete.
-                            if (this.isInitialSyncing) {
-                                this.isInitialSyncing = false; // Reset the flag
-                                const overlay = document.getElementById('lockingOverlay');
-                                overlay.style.display = 'none'; // Hide overlay
-                                this.log('✅ Initial auto-sync sequence complete.', 'info');
-
-                                // Restore overlay text for the save function
-                                overlay.querySelector('p:first-child').textContent = 'Trying to save preset...';
-                            }
-                            // --- END OF CHANGE ---
+                            this.finishInitialSync();
 
                             this.unlockPatchList();
                         }
@@ -13720,14 +13812,13 @@
                 this.log(`Received (unhandled): ${hexString.match(/.{1,2}/g).join(' ')}`, 'received');
             }
 
-            // Suppress device commands while updating UI from a received message
+            // Suppress device commands while updating UI from a received message.
+            // writeCommand() itself checks isApplyingState (see there), so this is a
+            // durable flag rather than a synchronous monkey-patch of the method.
             withUISuppression(fn) {
-                const origWrite = this.writeCommand;
                 const origFlag = this.isApplyingState;
-                this.writeCommand = () => Promise.resolve();
                 this.isApplyingState = true;
-                try { fn(); } finally {
-                    this.writeCommand = origWrite;
+                try { return fn(); } finally {
                     this.isApplyingState = origFlag;
                 }
             }
@@ -14011,19 +14102,20 @@
                 }
             }
 
-            syncPresetNames(isAutomated = false) {
-                return new Promise(async (resolve, reject) => {
-                    if (!this.isConnected || this.isSyncing) {
-                        this.log('Sync request ignored: Not connected or already syncing.', 'info');
-                        return isAutomated ? reject(new Error('Already syncing')) : resolve();
-                    }
+            async syncPresetNames(isAutomated = false) {
+                if (!this.isConnected || this.isSyncing) {
+                    this.log('Sync request ignored: Not connected or already syncing.', 'info');
+                    if (isAutomated) throw new Error('Already syncing');
+                    return;
+                }
 
-                    this.log('Starting preset name sync (using terminator packet)...', 'info');
-                    this.isSyncing = true;
-                    this.dumpPackets = [];
-                    this.syncPresetNamesBtn.disabled = true;
-                    this.syncPresetNamesBtn.textContent = 'Syncing...';
+                this.log('Starting preset name sync (using terminator packet)...', 'info');
+                this.isSyncing = true;
+                this.dumpPackets = [];
+                this.syncPresetNamesBtn.disabled = true;
+                this.syncPresetNamesBtn.textContent = 'Syncing...';
 
+                const request = new Promise((resolve, reject) => {
                     // Clear any previous timer and set a single, overall timeout for the entire operation.
                     clearTimeout(this.nameSyncTimeoutId);
                     this.nameSyncTimeoutId = setTimeout(() => {
@@ -14044,9 +14136,10 @@
 
                     // This promise will be resolved when processAndDisplayDump is called successfully.
                     this.presetNamesPromiseResolve = resolve;
-
-                    await this.writeCommand('8080F0000E00010000000201020400F7');
                 });
+
+                await this.writeCommand('8080F0000E00010000000201020400F7');
+                await request;
             }
 
             processAndDisplayDump() {
@@ -14088,12 +14181,19 @@
                 }
                 this.log('Requesting current preset state...', 'info');
 
-                // Ensure other sync processes are stopped
-                this.isWaitingForPresetDump = true;
-                this.isSyncing = false; 
+                // Ensure other sync processes are stopped. The preset-name sync has its own
+                // overall timeout and must not fire later and decode the state dump as names.
+                clearTimeout(this.nameSyncTimeoutId);
+                this.nameSyncTimeoutId = null;
+                this.isSyncing = false;
 
                 this.dumpPackets = [];
                 await this.writeCommand('8080F0000900010000000201020401F7');
+
+                // Set the waiting flag only after the request went out: if it were set before,
+                // the 3 s timeout below could fire while this write is still queued and
+                // unlock the list prematurely. The queue guarantees ordering anyway.
+                this.isWaitingForPresetDump = true;
 
                 this.syncTimeoutId = setTimeout(() => {
                     if (this.isWaitingForPresetDump) {
@@ -14104,12 +14204,16 @@
                 }, 3000);
             }
 
-            syncUserIRNames(isAutomated = false) {
-                return new Promise(async (resolve, reject) => {
-                    if (!this.isConnected) return isAutomated ? reject(new Error('Not connected')) : resolve();
-                    this.log('Requesting User IR names...', 'info');
+            async syncUserIRNames(isAutomated = false) {
+                if (!this.isConnected) {
+                    if (isAutomated) throw new Error('Not connected');
+                    return;
+                }
+                this.log('Requesting User IR names...', 'info');
 
-                    const timeout = setTimeout(() => {
+                let timeout = null;
+                const request = new Promise((resolve, reject) => {
+                    timeout = setTimeout(() => {
                         this.irNamePromiseResolve = null;
                         if (isAutomated) reject(new Error('User IR name sync timed out.'));
                         else resolve();
@@ -14120,17 +14224,22 @@
                         this.irNamePromiseResolve = null;
                         resolve();
                     };
-
-                    await this.writeCommand('8080F0020900010000000201020200F7');
                 });
+
+                await this.writeCommand('8080F0020900010000000201020200F7');
+                await request;
             }
 
-            syncCloneAmpNames(isAutomated = false) {
-                return new Promise(async (resolve, reject) => {
-                    if (!this.isConnected) return isAutomated ? reject(new Error('Not connected')) : resolve();
-                    this.log('Requesting Clone Amp names...', 'info');
+            async syncCloneAmpNames(isAutomated = false) {
+                if (!this.isConnected) {
+                    if (isAutomated) throw new Error('Not connected');
+                    return;
+                }
+                this.log('Requesting Clone Amp names...', 'info');
 
-                    const timeout = setTimeout(() => {
+                let timeout = null;
+                const request = new Promise((resolve, reject) => {
+                    timeout = setTimeout(() => {
                         this.cloneNamePromiseResolve = null;
                         if (isAutomated) reject(new Error('Clone Amp name sync timed out.'));
                         else resolve();
@@ -14141,9 +14250,10 @@
                         this.cloneNamePromiseResolve = null;
                         resolve();
                     };
-
-                    await this.writeCommand('8080F0030500010000000201020204F7');
                 });
+
+                await this.writeCommand('8080F0030500010000000201020204F7');
+                await request;
             }
 
             decodeAndApplyUserNames(packet, type) {
@@ -14418,15 +14528,13 @@
 
             applyPresetState(decodedData) {
                 this.log('Applying decoded state to UI...', 'info');
+                // From here on, writeCommand() suppresses outgoing commands until the flag is
+                // cleared in the finally block, so applying device state never echoes back.
+                const origApplyingState = this.isApplyingState;
                 this.isApplyingState = true; // Set flag to TRUE before making changes
 
                 try {
-                    const originalWriteCommand = this.writeCommand;
-                    this.writeCommand = () => {
-                        return Promise.resolve();
-                    };
-
-                    try {
+                    {
                         const cloneModeToggle = document.getElementById('amp-clone-mode');
 
                         if (decodedData.ampMode) {
@@ -14574,11 +14682,9 @@
                                 });
                             });
                         }
-                    } finally {
-                        this.writeCommand = originalWriteCommand;
                     }
                 } finally {
-                    this.isApplyingState = false; // Set flag to FALSE when finished
+                    this.isApplyingState = origApplyingState; // Restore the flag when finished
 
                     // If this was the initial sync, perform one final check for modification status
                     // after the UI has been fully populated.
@@ -14586,16 +14692,11 @@
                         this.log('Initial sync applied. Performing final check for remote modifications...', 'info');
                         // A short, non-blocking timeout allows this function to finish before we send the next command,
                         // which reliably prevents the "GATT operation already in progress" error.
-                        setTimeout(async () => {
-                            await this.writeCommand('8080F0010500010000000201020405F7');
-                            this.isInitialSyncing = false; // The sequence is now TRULY complete.
-
-                            const overlay = document.getElementById('lockingOverlay');
-                            overlay.style.display = 'none'; // Hide the sync overlay
-                            overlay.querySelector('p:first-child').textContent = 'Trying to save preset...';
-                            overlay.querySelector('p:last-child').textContent = 'This could take up to 2 minutes!';
-
-                            this.log('✅ Initial auto-sync sequence complete.', 'info');
+                        setTimeout(() => {
+                            // If the dump handler already completed the sequence, do not send twice.
+                            if (!this.isInitialSyncing) return;
+                            this.writeCommand('8080F0010500010000000201020405F7');
+                            this.finishInitialSync();
                         }, 150); // A small delay is sufficient.
                     }
 
@@ -14719,8 +14820,32 @@
                 const timestamp = new Date().toLocaleTimeString();
                 const entry = document.createElement('div');
                 entry.className = 'log-entry';
-                entry.innerHTML = `<span class="log-time">${timestamp}</span><span class="log-type ${type}">[${type.toUpperCase()}]</span><span class="log-message">${message}</span>`;
+
+                // Build the entry with textContent instead of innerHTML: log messages can
+                // contain decoded device strings, which must never be parsed as markup.
+                const timeSpan = document.createElement('span');
+                timeSpan.className = 'log-time';
+                timeSpan.textContent = timestamp;
+
+                const typeSpan = document.createElement('span');
+                typeSpan.className = `log-type ${type}`;
+                typeSpan.textContent = `[${type.toUpperCase()}]`;
+
+                const messageSpan = document.createElement('span');
+                messageSpan.className = 'log-message';
+                messageSpan.textContent = message;
+
+                entry.appendChild(timeSpan);
+                entry.appendChild(typeSpan);
+                entry.appendChild(messageSpan);
                 this.logContent.appendChild(entry);
+
+                // Keep the log bounded so long sessions do not grow the DOM forever.
+                const maxEntries = this.maxLogEntries || 500;
+                while (this.logContent.childElementCount > maxEntries) {
+                    this.logContent.removeChild(this.logContent.firstChild);
+                }
+
                 this.logContent.scrollTop = this.logContent.scrollHeight;
             }
 
@@ -14867,7 +14992,7 @@
         }
 
         document.addEventListener('mouseover', (e) => {
-            const validTarget = e.target.closest('.slider, .dropdown-select, .toggle-switch, .chain-module');
+            const validTarget = e.target instanceof Element ? e.target.closest('.slider, .dropdown-select, .toggle-switch, .chain-module') : null;
             if (validTarget && !validTarget.disabled && !validTarget.classList.contains('locked')) {
                 currentlyHoveredControl = validTarget;
                 const row = validTarget.closest('.control-row');
@@ -14879,7 +15004,8 @@
         document.addEventListener('mouseout', (e) => {
             if (currentlyHoveredControl) {
                 const relatedTarget = e.relatedTarget;
-                if (!currentlyHoveredControl.contains(relatedTarget)) {
+                const stillInside = relatedTarget instanceof Node && currentlyHoveredControl.contains(relatedTarget);
+                if (!stillInside) {
                     const row = currentlyHoveredControl.closest('.control-row');
                     if (row) row.classList.remove('hover-focus');
                     else if (currentlyHoveredControl.classList.contains('chain-module')) currentlyHoveredControl.classList.remove('hover-focus');
@@ -14891,6 +15017,14 @@
         // Intercept Wheel
         document.addEventListener('wheel', (e) => {
             if (!currentlyHoveredControl) return;
+
+            // Controls are re-created when presets/effect types change. If the hovered
+            // control was detached in the meantime, forget it; otherwise preventDefault()
+            // below would keep swallowing page scrolling for the whole document.
+            if (!currentlyHoveredControl.isConnected || currentlyHoveredControl.classList.contains('locked')) {
+                currentlyHoveredControl = null;
+                return;
+            }
 
             e.preventDefault(); // Prevent default scroll
             const direction = e.deltaY > 0 ? -1 : 1; 
@@ -14951,6 +15085,8 @@
         // Intercept Arrows (Keyboard)
         document.addEventListener('keydown', (e) => {
             if (!currentlyHoveredControl) return;
+            // Do not act on a control that was replaced by a UI rebuild.
+            if (!currentlyHoveredControl.isConnected) { currentlyHoveredControl = null; return; }
             // Ignore if user is actively typing in a native input box somewhere else
             if (document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'number') {
                 return;
@@ -15020,6 +15156,7 @@
         // Intercept Mouse 4/5 on mouseup
         document.addEventListener('mouseup', (e) => {
             if (!currentlyHoveredControl) return;
+            if (!currentlyHoveredControl.isConnected) { currentlyHoveredControl = null; return; }
 
             let direction = 0;
             if (e.button === 3) direction = -1; // Mouse 4 (Backward)
