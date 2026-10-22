@@ -14,6 +14,16 @@ export function loadApp() {
   const commands = JSON.parse(readFileSync(join(root, 'data', 'commands.json'), 'utf8'));
   const document = createDocument();
   const toasts = [];
+  // Minimal localStorage so the silent backup store can be exercised.
+  const storage = new Map();
+  const localStorage = {
+    getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+    setItem: (k, v) => storage.set(k, String(v)),
+    removeItem: (k) => storage.delete(k),
+    clear: () => storage.clear(),
+    get length() { return storage.size; },
+    key: (i) => [...storage.keys()][i] ?? null,
+  };
   const sandbox = {
     console,
     setTimeout, clearTimeout, setInterval, clearInterval,
@@ -26,6 +36,7 @@ export function loadApp() {
     window: { PocketEditData: { modules, commands } },
     showToast: (message, type) => toasts.push({ message, type }),
     confirm: () => true,
+    localStorage,
   };
   sandbox.globalThis = sandbox;
   const context = vm.createContext(sandbox);

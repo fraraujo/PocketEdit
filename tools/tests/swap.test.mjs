@@ -21,7 +21,8 @@ function swapEditor() {
     return { index: i, baseName: `P0${i + 1}`, name: ed.userPatchesData[i].decodedName, data: { marker: i } };
   };
   ed.writePresetState = async (i, name, data) => { ed.calls.push(['write', i, name, data.marker]); };
-  ed.downloadJson = (json, file) => ed.calls.push(['backup', json.presetName, file]);
+  sandbox.localStorage.clear();
+  ed.downloadJson = (json, file) => ed.calls.push(['download', json.presetName, file]);
   ed.renderPatchList = () => {};
   ed.syncPresetNames = async () => ed.calls.push(['resync']);
   ed.lockingOverlay = { style: {} };
@@ -34,10 +35,12 @@ test('swap reads both slots, backs them up and writes them crossed', async () =>
   sandbox.confirm = () => true;
   const ok = await ed.swapUserPresets(1, 2); // P02 <-> P03
   assert.equal(ok, true);
-  assert.deepEqual(ed.calls.map((c) => c[0]), ['read', 'read', 'backup', 'backup', 'write', 'write', 'resync']);
+  assert.deepEqual(ed.calls.map((c) => c[0]), ['read', 'read', 'write', 'write', 'resync']);
+  assert.equal(ed.getBackupCount(), 2, 'both presets stored as local backups');
+  assert.equal(ed.downloaded === undefined || ed.downloaded.length === 0, true, 'no automatic downloads');
   // P02's content (marker 1, "Two") goes into slot 2 (P03); P03's content into slot 1 (P02)
-  assert.deepEqual(ed.calls[4], ['write', 2, 'Two', 1]);
-  assert.deepEqual(ed.calls[5], ['write', 1, 'Three', 2]);
+  assert.deepEqual(ed.calls[2], ['write', 2, 'Two', 1]);
+  assert.deepEqual(ed.calls[3], ['write', 1, 'Three', 2]);
   // local list reflects the swap
   assert.equal(ed.userPatchesData[1].decodedName, 'Three');
   assert.equal(ed.userPatchesData[2].decodedName, 'Two');

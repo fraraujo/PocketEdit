@@ -1450,6 +1450,8 @@
                 this.quickSaveBtn = document.getElementById('quickSaveBtn');
                 this.quickImportBtn = document.getElementById('quickImportBtn');
                 this.quickExportBtn = document.getElementById('quickExportBtn');
+                this.backupModal = document.getElementById('backupModal');
+                this.backupList = document.getElementById('backupList');
                 this.chainScroll = document.getElementById('chainScroll');
                 this.logPanel = document.getElementById('logPanel');
                 this.logToggle = document.getElementById('logToggle');
@@ -1969,6 +1971,11 @@
                 this.quickSaveBtn?.addEventListener('click', () => this.showSaveModal());
                 this.quickImportBtn?.addEventListener('click', () => this.importPreset());
                 this.quickExportBtn?.addEventListener('click', () => this.exportPreset());
+
+                // Local preset backups
+                document.getElementById('backupsBtn')?.addEventListener('click', () => this.showBackupsModal());
+                document.getElementById('closeBackupsBtn')?.addEventListener('click', () => this.hideBackupsModal());
+                document.getElementById('clearBackupsBtn')?.addEventListener('click', () => this.clearBackups());
 
                 // Esc cancels an armed preset swap.
                 document.addEventListener('keydown', (event) => {
@@ -4185,6 +4192,141 @@
                 URL.revokeObjectURL(url);
             }
 
+            // ---------------------------------------------------------------
+            // SILENT PRESET BACKUPS
+            // Writing preset slots is destructive, so the swap keeps a copy of
+            // both presets. Triggering two automatic file downloads makes the
+            // browser ask "allow multiple downloads?", so backups are stored in
+            // localStorage instead; the Backups dialog downloads them on demand.
+            // ---------------------------------------------------------------
+
+            static get BACKUP_STORE_KEY() { return 'pocketedit.presetBackups.v1'; }
+            static get MAX_BACKUPS() { return 40; }
+
+            readBackupStore() {
+                try {
+                    const raw = localStorage.getItem(SonicakeBLEEditor.BACKUP_STORE_KEY);
+                    const list = raw ? JSON.parse(raw) : [];
+                    return Array.isArray(list) ? list : [];
+                } catch (error) {
+                    this.log(`Could not read local backups: ${error.message}`, 'warning');
+                    return [];
+                }
+            }
+
+            writeBackupStore(list) {
+                try {
+                    localStorage.setItem(SonicakeBLEEditor.BACKUP_STORE_KEY, JSON.stringify(list));
+                    return true;
+                } catch (error) {
+                    this.log(`Could not store local backups: ${error.message}`, 'error');
+                    return false;
+                }
+            }
+
+            // Stores the JSON of the given presets without any download prompt.
+            // Returns the stored entries, or null when storage is unavailable/full.
+            saveBackupsLocally(entries, reason = 'swap') {
+                const stored = this.readBackupStore();
+                const createdAt = new Date().toISOString();
+                const added = entries.map((entry) => ({
+                    id: `${entry.baseName}-${createdAt}-${Math.random().toString(36).slice(2, 7)}`,
+                    createdAt,
+                    reason,
+                    preset: entry.baseName,
+                    name: entry.name,
+                    json: this.fullPresetDataToExportJson(entry),
+                }));
+
+                // Newest first, then trim the oldest entries.
+                const next = [...added, ...stored].slice(0, SonicakeBLEEditor.MAX_BACKUPS);
+                if (!this.writeBackupStore(next)) {
+                    // Fall back to files rather than losing the backup entirely.
+                    for (const entry of entries) {
+                        this.downloadJson(this.fullPresetDataToExportJson(entry), `backup_${entry.baseName}.json`);
+                    }
+                    return null;
+                }
+                return added;
+            }
+
+            getBackupCount() {
+                return this.readBackupStore().length;
+            }
+
+            downloadBackup(id) {
+                const entry = this.readBackupStore().find((b) => b.id === id);
+                if (!entry) return;
+                this.downloadJson(entry.json, `backup_${entry.preset}_${entry.createdAt.slice(0, 19).replace(/[:T]/g, '-')}.json`);
+            }
+
+            deleteBackup(id) {
+                this.writeBackupStore(this.readBackupStore().filter((b) => b.id !== id));
+                this.renderBackupList();
+            }
+
+            clearBackups() {
+                if (typeof confirm === 'function' && !confirm('Delete all locally stored preset backups?')) return;
+                this.writeBackupStore([]);
+                this.renderBackupList();
+            }
+
+            showBackupsModal() {
+                this.renderBackupList();
+                if (this.backupModal) this.backupModal.style.display = 'block';
+            }
+
+            hideBackupsModal() {
+                if (this.backupModal) this.backupModal.style.display = 'none';
+            }
+
+            renderBackupList() {
+                if (!this.backupList) return;
+                const backups = this.readBackupStore();
+                this.backupList.textContent = '';
+                if (!backups.length) {
+                    const empty = document.createElement('p');
+                    empty.className = 'backup-empty';
+                    empty.textContent = 'No backups yet. Swapping two presets stores both of them here.';
+                    this.backupList.appendChild(empty);
+                    return;
+                }
+                for (const backup of backups) {
+                    const row = document.createElement('div');
+                    row.className = 'backup-row';
+
+                    const info = document.createElement('div');
+                    info.className = 'backup-info';
+                    const title = document.createElement('div');
+                    title.className = 'backup-title';
+                    title.textContent = `${backup.preset}: ${backup.name}`;
+                    const meta = document.createElement('div');
+                    meta.className = 'backup-meta';
+                    meta.textContent = new Date(backup.createdAt).toLocaleString();
+                    info.appendChild(title);
+                    info.appendChild(meta);
+
+                    const actions = document.createElement('div');
+                    actions.className = 'backup-actions';
+                    const dl = document.createElement('button');
+                    dl.type = 'button';
+                    dl.className = 'btn backup-btn';
+                    dl.textContent = 'Download';
+                    dl.addEventListener('click', () => this.downloadBackup(backup.id));
+                    const del = document.createElement('button');
+                    del.type = 'button';
+                    del.className = 'btn backup-btn';
+                    del.textContent = 'Delete';
+                    del.addEventListener('click', () => this.deleteBackup(backup.id));
+                    actions.appendChild(dl);
+                    actions.appendChild(del);
+
+                    row.appendChild(info);
+                    row.appendChild(actions);
+                    this.backupList.appendChild(row);
+                }
+            }
+
             async swapUserPresets(indexA, indexB) {
                 if (!this.isConnected) {
                     this.showToast('Connect to the device before swapping presets.', 'warning');
@@ -4202,7 +4344,7 @@
                 const nameB = this.userPatchesData[indexB]?.decodedName || baseB;
 
                 const question = `Swap ${baseA} "${nameA}" with ${baseB} "${nameB}"?\n\n`
-                    + 'Both presets are downloaded as JSON backups first, but the device slots are rewritten.';
+                    + 'Both presets are stored as local backups first, but the device slots are rewritten.';
                 if (typeof confirm === 'function' && !confirm(question)) return false;
 
                 this.isSwappingPresets = true;
@@ -4212,9 +4354,11 @@
                     const a = await this.readPresetState(indexA);
                     const b = await this.readPresetState(indexB);
 
-                    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-                    this.downloadJson(this.fullPresetDataToExportJson(a), `backup_${a.baseName}_${stamp}.json`);
-                    this.downloadJson(this.fullPresetDataToExportJson(b), `backup_${b.baseName}_${stamp}.json`);
+                    // Silent: no file downloads, no "allow multiple downloads?" prompt.
+                    const backups = this.saveBackupsLocally([a, b], 'swap');
+                    if (backups) {
+                        this.log(`Backed up ${a.baseName} and ${b.baseName} locally (${this.getBackupCount()} total).`, 'info');
+                    }
 
                     await this.writePresetState(indexB, a.name, a.data);
                     await this.writePresetState(indexA, b.name, b.data);

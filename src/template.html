@@ -888,6 +888,59 @@
             display: flex;
         }
 
+        /* Local preset backups dialog */
+        .backup-hint {
+            font-size: 11px;
+            color: #999;
+            margin: 4px 0 10px 0;
+        }
+
+        .backup-list {
+            max-height: 260px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .backup-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .backup-title {
+            font-size: 12px;
+            color: #e0e0e0;
+        }
+
+        .backup-meta {
+            font-size: 10px;
+            color: #888;
+        }
+
+        .backup-actions {
+            display: flex;
+            gap: 6px;
+            flex: 0 0 auto;
+        }
+
+        .backup-btn {
+            width: auto;
+            padding: 4px 8px;
+            font-size: 10px;
+        }
+
+        .backup-empty {
+            font-size: 12px;
+            color: #888;
+        }
+
         /* Non-blocking notifications (replaces window.alert) */
         .toast-container {
             position: fixed;
@@ -1755,6 +1808,7 @@
     </div>
     <button type="button" id="savePresetBtn" class="btn" style="margin-top: 20px;">Save Current Preset</button>
     <button type="button" id="exportPresetBtn" class="btn" style="margin-top: 10px;">Export Preset</button>
+    <button type="button" id="backupsBtn" class="btn" style="margin-top: 10px;">Backups</button>
     <button type="button" id="importPresetBtn" class="btn" style="margin-top: 10px;">Import Preset</button>
     <input type="file" id="presetFileInput" accept=".json" style="display: none;">
 </div>
@@ -1804,6 +1858,16 @@
 </div>
 
 <!-- USB MIDI Device Selection Modal -->
+<div id="backupModal" class="advanced-settings-panel" style="top: 50%; left: 50%; transform: translate(-50%, -50%); width: 460px;">
+    <h4>Local Preset Backups</h4>
+    <p class="backup-hint">Stored in this browser (no files are downloaded automatically).</p>
+    <div id="backupList" class="backup-list"></div>
+    <div style="display: flex; gap: 10px; margin-top: 15px;">
+        <button type="button" id="clearBackupsBtn" class="btn">Clear All</button>
+        <button type="button" id="closeBackupsBtn" class="btn btn-primary">Close</button>
+    </div>
+</div>
+
 <div id="usbMidiModal" class="advanced-settings-panel" style="top: 50%; left: 50%; transform: translate(-50%, -50%); width: 450px; display: none;">
     <h4>Select USB MIDI Device</h4>
     <div style="margin: 20px 0;">
