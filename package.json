@@ -8,6 +8,7 @@
     "build": "node tools/build.mjs",
     "check": "node tools/build.mjs --check",
     "test": "node --test \"tools/tests/*.test.mjs\"",
-    "prepublishOnly": "npm run build && npm test"
+    "coverage": "node tools/coverage.mjs",
+    "coverage:min": "node tools/coverage.mjs 8"
   }
 }

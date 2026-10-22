@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Builds the single, self-contained index.html from:
-//   src/template.html - markup, CSS and the script shell with two markers:
+//   src/template.html - markup, CSS and the script shell with three markers:
 //                         window.PocketEditData = /*POCKETEDIT-DATA*/;
-//                         /*POCKETEDIT-APP*/
-//   src/app.js        - the application code (no device data)
+//                         /*POCKETEDIT-SHELL*/  (page-level listeners + bootstrap)
+//                         /*POCKETEDIT-APP*/    (the editor itself)
+//   src/app.js        - the editor code (no device data)
+//   src/shell.js      - page-level DOM listeners and the DOMContentLoaded bootstrap
 //   data/*.json       - the device data (source of truth)
 //
 // The result works offline with a double-click and can be published as a static
@@ -21,6 +23,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
 
 const DATA_MARKER = '/*POCKETEDIT-DATA*/';
+const SHELL_MARKER = '/*POCKETEDIT-SHELL*/';
 const APP_MARKER = '/*POCKETEDIT-APP*/';
 
 const fail = (msg) => { console.error(`build: ${msg}`); process.exit(1); };
@@ -29,6 +32,7 @@ const modules = JSON.parse(read('data/modules.json'));
 const commands = JSON.parse(read('data/commands.json'));
 const template = read('src/template.html');
 const app = read('src/app.js');
+const shell = read('src/shell.js');
 
 // ---- sanity checks: a broken data file must fail the build loudly ----
 if (!modules.effectLibrary || !Array.isArray(modules.modules)) fail('data/modules.json is missing effectLibrary/modules');
@@ -50,7 +54,12 @@ for (const modId in commands.effectTypes) {
 
 if (!template.includes(DATA_MARKER)) fail(`src/template.html has no ${DATA_MARKER} marker`);
 if (!template.includes(APP_MARKER)) fail(`src/template.html has no ${APP_MARKER} marker`);
-if (app.includes(APP_MARKER) || app.includes(DATA_MARKER)) fail('src/app.js must not contain build markers');
+if (!template.includes(SHELL_MARKER)) fail(`src/template.html has no ${SHELL_MARKER} marker`);
+for (const [name, code] of [['src/app.js', app], ['src/shell.js', shell]]) {
+  for (const marker of [DATA_MARKER, APP_MARKER, SHELL_MARKER]) {
+    if (code.includes(marker)) fail(`${name} must not contain the ${marker} marker`);
+  }
+}
 
 // The JSON is used inline; it must be byte-identical to the original hand-written
 // object (same minified representation) so no behaviour changes sneak in.
@@ -61,6 +70,7 @@ if (dataJson.includes('</script')) fail('data contains "</script" and would brea
 const indent = (template.slice(0, template.indexOf(DATA_MARKER)).match(/[ \t]*$/) || [''])[0];
 const html = template
   .replace(DATA_MARKER, () => dataJson)
+  .replace(SHELL_MARKER, () => shell.replace(/\s+$/, ''))
   .replace(APP_MARKER, () => app);
 
 const target = join(root, 'index.html');

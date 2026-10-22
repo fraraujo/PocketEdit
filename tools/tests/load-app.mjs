@@ -2,7 +2,7 @@
 // device data from data/*.json, and returns the editor class plus test helpers.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
 import { createDocument, StubElement } from './dom-stub.mjs';
 
@@ -29,9 +29,25 @@ export function loadApp() {
   sandbox.globalThis = sandbox;
   const context = vm.createContext(sandbox);
   // Expose the lexical class declaration to tests.
-  vm.runInContext(`${app}\n;globalThis.__EditorClass = SonicakeBLEEditor;`, context, { filename: 'src/app.js' });
+  // Use real file URLs so the Node test runner attributes V8 coverage to the sources.
+  // (An unnamed script would be exposed as anonymous eval code and never measured.)
+  const appPath = join(root, 'src', 'app.js');
+  vm.runInContext(`${app}\n;globalThis.__EditorClass = SonicakeBLEEditor;`, context, {
+    filename: pathToFileURL(appPath).href,
+  });
   const EditorClass = context.__EditorClass;
   if (typeof EditorClass !== 'function') throw new Error('SonicakeBLEEditor not found in src/app.js');
+
+  // src/shell.js holds the page-level listeners and the bootstrap. It is executed as its
+  // own script (its own file URL) so coverage is attributed to it. The template's data
+  // shell is loaded just before it, mirroring the order used by the build.
+  // The template's only JavaScript is the data assignment; everything else inside its
+  // script tag is injected from src/app.js and src/shell.js (already executed above).
+  vm.runInContext('window.PocketEditData = window.PocketEditData || {};', context, {
+    filename: pathToFileURL(join(root, 'src', 'template.html')).href,
+  });
+  const shell = readFileSync(join(root, 'src', 'shell.js'), 'utf8');
+  vm.runInContext(shell, context, { filename: pathToFileURL(join(root, 'src', 'shell.js')).href });
 
   // An instance whose constructor side effects are skipped, with logging captured.
   const makeEditor = () => {
