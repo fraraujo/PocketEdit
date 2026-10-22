@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pocket Edit</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: auto;
+        }
+
+        .main-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Left Sidebar */
+        .sidebar {
+            width: 200px;
+            background: linear-gradient(180deg, #3a3a3a, #2a2a2a);
+            border-right: 1px solid #444;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            background: linear-gradient(90deg, #ff6b35, #f7931e);
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            border-bottom: 1px solid #444;
+        }
+
+        .connection-panel {
+            padding: 15px;
+            border-bottom: 1px solid #444;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff4444;
+        }
+
+        .status-dot.connected {
+            background: #44ff44;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            background: linear-gradient(145deg, #4a4a4a, #3a3a3a);
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: linear-gradient(145deg, #5a5a5a, #4a4a4a);
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(145deg, #0066cc, #0052a3);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: linear-gradient(145deg, #0077dd, #0066cc);
+        }
+
+        .patch-list {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .patch-tabs {
+            display: flex;
+            flex-shrink: 0;
+        }
+
+        .patch-tab-btn {
+            flex: 1;
+            padding: 10px;
+            background: #333;
+            border: none;
+            border-bottom: 2px solid #333;
+            color: #999;
+            cursor: pointer;
+            font-size: 11px;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+        }
+
+        .patch-tab-btn:hover {
+            background: #444;
+        }
+
+        .patch-tab-btn.active {
+            color: #ff6b35;
+            background: #2a2a2a;
+            border-bottom-color: #ff6b35;
+        }
+
+        .patch-search-container {
+            padding: 8px;
+            background: #2a2a2a;
+            flex-shrink: 0;
+        }
+
+        #patchSearchInput {
+            width: 100%;
+            padding: 6px 10px;
+            background: #1e1e1e;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 12px;
+        }
+
+        .patch-items-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 8px 8px 8px;
+            max-height: 45vh; 
+        }
+
+        .patch-item {
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid transparent;
+            border-radius: 4px;
+            margin-bottom: 2px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .patch-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #666;
+        }
+
+        .patch-item.selected {
+            background: linear-gradient(145deg, #0066cc, #0052a3);
+            border-color: #0088ff;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #2a2a2a;
+        }
+
+        .top-bar {
+            height: 60px;
+            background: linear-gradient(180deg, #3a3a3a, #2a2a2a);
+            border-bottom: 1px solid #444;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            justify-content: space-between;
+        }
+
+        .patch-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .patch-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #ff6b35;
+        }
+
+        .patch-number {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        /* Signal Chain */
+        .signal-chain {
+            padding: 15px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            justify-content: center;
+            border-bottom: 1px solid #444; /* Added separator */
+        }
+
+        .chain-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .chain-module {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(145deg, #404040, #303030);
+            border: 2px solid #555;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .chain-module:hover {
+            border-color: #777;
+            transform: translateY(-2px);
+        }
+
+        .chain-module.active {
+            border-color: #ff6b35;
+            box-shadow: 0 0 10px rgba(255, 107, 53, 0.3);
+        }
+
+        .chain-module.disabled {
+            opacity: 0.4;
+            border-color: #333;
+        }
+
+        .chain-module.dragging {
+            opacity: 0.5;
+            background: #555;
+        }
+
+        #fixed-chain-block {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(0,0,0,0.15);
+            border: 1px dashed #555;
+            border-radius: 12px;
+            padding: 10px;
+        }
+
+        #chain-terminator {
+            width: 0;
+            height: 0;
+            padding: 0;
+            margin: 0;
+            border: none;
+            font-size: 0;
+        }
+
+        .module-name {
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #ccc;
+        }
+
+        .module-type {
+            font-size: 9px;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        .module-status {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #333;
+            cursor: pointer;
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+
+        /* for larger clickable area */
+        .module-status::before {
+            content: '';
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            bottom: -6px;
+            left: -6px;
+        }
+
+        .module-status:hover {
+            box-shadow: 0 0 6px rgba(255,255,255,0.3);
+        }
+
+        .module-status.on {
+            background: #44ff44;
+        }
+
+        .module-status.on:hover {
+            box-shadow: 0 0 8px rgba(68,255,68,0.7);
+        }
+
+        .chain-connector {
+            width: 20px;
+            height: 2px;
+            background: #666;
+            position: relative;
+        }
+
+        .chain-connector::after {
+            content: '▶';
+            position: absolute;
+            right: -10px;
+            top: -6px;
+            color: #666;
+            font-size: 10px;
+        }
+
+        /* Effects Panel */
+        .effects-panel {
+            background: linear-gradient(180deg, #353535, #2a2a2a);
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .effect-description {
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 20px;
+            line-height: 1.5;
+            background: rgba(0,0,0,0.2);
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 3px solid #ff6b35;
+        }
+
+        .effect-controls {
+            display: none;
+        }
+
+        .effect-controls.active {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .control-section {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 15px;
+        }
+
+        .control-section h4 {
+            color: #ff6b35;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 15px;
+            letter-spacing: 0.5px;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .control-label {
+            min-width: 60px;
+            font-size: 11px;
+            color: #ccc;
+            text-transform: uppercase;
+            display: inline-block; /* label element: keep the old div layout */
+        }
+
+        .toggle-switch:focus-visible {
+            outline: 2px solid #ff6b35;
+            outline-offset: 2px;
+        }
+
+        .toggle-switch {
+            width: 40px;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            position: relative;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .toggle-switch.on {
+            background: #ff6b35;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s ease;
+        }
+
+        .toggle-switch.on::after {
+            transform: translateX(20px);
+        }
+
+        .toggle-switch.locked {
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .dropdown-select {
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #e0e0e0;
+            padding: 5px 10px;
+            font-size: 11px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            gap: 10px;
+        }
+
+        .slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            background: linear-gradient(to right, #ff6b35 var(--progress, 0%), #2a2a2a var(--progress, 0%));
+            outline: none;
+            opacity: 0.9;
+            transition: opacity .2s;
+            border-radius: 4px;
+            border: 1px solid #444;
+            cursor: pointer;
+        }
+
+        .slider:hover {
+            opacity: 1;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #ff6b35;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+
+        .slider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #ff6b35;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+
+        .slider-value {
+            font-size: 11px;
+            color: #ccc;
+            min-width: 25px;
+            text-align: right;
+            background: rgba(0,0,0,0.2);
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .slider-value-input {
+            width: 35px; /* Adjust width as needed */
+            font-size: 11px;
+            color: #e0e0e0;
+            background: #1e1e1e;
+            border: 1px solid #ff6b35;
+            border-radius: 3px;
+            text-align: right;
+            padding: 1px 3px;
+        }
+
+        /* Log Panel */
+        .log-panel {
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            width: 500px;
+            height: 350px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #444;
+            border-radius: 6px 6px 0 0;
+            display: none;
+            flex-direction: column;
+            z-index: 1000;
+        }
+
+        .log-panel.visible {
+            display: flex;
+        }
+
+        /* Non-blocking notifications (replaces window.alert) */
+        .toast-container {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 3000;
+            pointer-events: none;
+            max-width: min(520px, 90vw);
+        }
+
+        .toast {
+            pointer-events: auto;
+            background: #1e1e1e;
+            color: #eee;
+            border: 1px solid #444;
+            border-left: 4px solid #888;
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 13px;
+            line-height: 1.4;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+            animation: toast-in 0.18s ease-out;
+        }
+
+        .toast.success { border-left-color: #4caf50; }
+        .toast.error   { border-left-color: #e05252; }
+        .toast.warning { border-left-color: #e0a33e; }
+
+        .toast.leaving { opacity: 0; transition: opacity 0.25s ease; }
+
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .log-header {
+            padding: 10px;
+            background: #333;
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-header h4 {
+            font-size: 12px;
+            color: #ccc;
+            text-transform: uppercase;
+        }
+
+        .log-toggle {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            padding: 8px 12px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ccc;
+            cursor: pointer;
+            font-size: 11px;
+            z-index: 1001;
+        }
+
+        .log-content {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            line-height: 1.4;
+        }
+
+        .log-entry {
+            margin-bottom: 2px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .log-time {
+            color: #666;
+            min-width: 60px;
+        }
+
+        .log-type {
+            color: #888;
+            min-width: 50px;
+            font-weight: bold;
+        }
+
+        .log-type.sent { color: #4a9eff; }
+        .log-type.received { color: #4aff9e; }
+        .log-type.error { color: #ff4a4a; }
+        .log-type.info { color: #cccccc; }
+
+        .log-message {
+            color: #ccc;
+        }
+
+        .manual-command-panel {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            background: #333;
+            padding: 8px 10px;
+            border-bottom: 1px solid #444;
+        }
+
+        #manualCommandInput {
+            background: #2a2a2a;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            width: 100%;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        #sendManualCommandBtn {
+            width: auto;
+            margin-bottom: 0;
+            flex-shrink: 0;
+        }
+
+        .chain-connector.is-last-connector {
+            visibility: hidden;
+        }
+
+        .global-volume-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 250px;
+        }
+
+        .global-volume-control .control-label {
+            font-size: 11px;
+            color: #ccc;
+            text-transform: uppercase;
+            min-width: fit-content;
+        }
+
+        /* New container for the patch volume slider */
+        .patch-volume-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 15px 20px;
+        }
+
+        .patch-volume-module {
+            width: 50%;
+            max-width: 500px;
+            height: 50px;
+            background: linear-gradient(145deg, #404040, #303030);
+            border: 2px solid #555;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            position: relative;
+            padding: 10px;
+            gap: 8px;
+        }
+
+        .patch-volume-module .module-name {
+            font-size: 14px;
+            font-weight: bold;
+            color: #ccc;
+        }
+
+        .patch-volume-module .slider-container {
+            width: 100%;
+        }
+        /* Add these new styles to your existing <style> block */
+        .settings-btn {
+            background: none;
+            border: none;
+            color: #ccc;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 5px;
+            margin-left: 15px;
+        }
+        .settings-btn:hover {
+            color: #ff6b35;
+        }
+
+        .advanced-settings-panel {
+            position: fixed;
+            top: 65px; /* Position below the top bar */
+            right: 20px;
+            width: 300px;
+            background: linear-gradient(145deg, #3a3a3a, #2a2a2a);
+            border: 1px solid #444;
+            border-radius: 6px;
+            z-index: 1002;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            display: none; /* Hidden by default */
+        }
+
+        .advanced-settings-panel.visible {
+            display: block; /* Shown when this class is added */
+        }
+
+        .advanced-settings-panel h4 {
+            color: #ff6b35;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+            letter-spacing: 0.5px;
+        }
+
+        .module-icon {
+            margin-top: 4px;
+            margin-bottom: 4px; /* Adds a little space between the icon and the text */
+        }
+
+        .patch-items-container.locked {
+            opacity: 0.5;
+            pointer-events: none;
+            cursor: wait;
+        }
+
+        .debug-buttons-panel {
+            padding: 8px 10px 0 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            background: #333;
+            border-bottom: 1px solid #444;
+        }
+
+        .debug-buttons-panel .btn {
+            width: auto;
+            flex-grow: 1;
+            margin-bottom: 0;
+            padding: 4px 6px; 
+        }
+
+      /* Main container for the entire tap tempo section */
+        .tap-tempo-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #555;
+        }
+
+        /* Grid layout for the main components */
+        .tap-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            align-items: center;
+        }
+
+        /* Styling for the BPM and Delay Time display boxes */
+        .tap-display {
+            background-color: #222;
+            border-radius: 6px;
+            padding: 10px;
+            border: 1px solid #444;
+        }
+
+        /* BPM and Delay Time text input styling */
+        .bpm-input {
+            width: 100%;
+            background-color: transparent;
+            border: none;
+            /* Color updated to match the slider's active color */
+            color: #ff6b35;
+            font-size: 1.5em;
+            font-weight: 700;
+            font-family: "Courier New", Courier, monospace;
+            text-align: center;
+            padding: 0;
+        }
+
+        /* Removes the number input arrows in Chrome/Safari */
+        .bpm-input::-webkit-outer-spin-button,
+        .bpm-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        /* Removes the number input arrows in Firefox */
+        .bpm-input[type=number] {
+            -moz-appearance: textfield;
+        }
+
+        /* Subtle background highlight when the BPM input is focused */
+        .bpm-input:focus {
+            outline: none;
+            background-color: rgba(247, 147, 30, 0.1);
+        }
+
+        /* "BPM" and "Delay Time" labels under the displays */
+        .display-label {
+            font-size: 0.7em;
+            color: #999;
+            text-transform: uppercase;
+            display: block;
+            margin-top: 2px;
+        }
+
+        /* Main "TAP" button styling */
+        .tap-button {
+            grid-column: 1 / -1;
+            padding: 1rem;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #fff;
+            /* Updated background to a neutral gray */
+            background-color: #555;
+            border: 1px solid #777;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.1s ease-out, box-shadow 0.1s ease-out, color 0.1s ease-out;
+        }
+
+        /* "TAP" button active (pressed) state */
+        .tap-button:active {
+            /* Updated to the primary slider color */
+            background-color: #ff6b35;
+            transform: scale(0.98);
+        }
+
+        /* Visual indicator for the BPM beat */
+       .tap-button.beat-flash {
+            /* The text will flash to the active orange color */
+            color: #ff6b35;
+        }
+
+        /* Container for the note division buttons (1/4, 1/8, etc.) */
+        .note-divisions {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        /* Individual note division button styling */
+        .note-btn {
+            flex-grow: 1;
+            padding: 0.6rem 0;
+            font-size: 0.9rem;
+            color: #ccc;
+            background-color: #4f4f4f;
+            border: 1px solid #555;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        /* Active note division button styling */
+        .note-btn.active {
+            /* Updated to the primary slider color */
+            background-color: #ff6b35;
+            color: #fff;
+            /* A slightly brighter orange for the border */
+            border-color: #ff6b35;
+            font-weight: bold;
+        }
+
+        .bpm-input.out-of-range {
+            /* This animation will run when the class is active */
+            animation: flash-red 0.8s infinite;
+        }
+
+        /* This defines the flashing animation itself */
+        @keyframes flash-red {
+            0% { background-color: transparent; }
+            50% { background-color: #9d2c2c; } /* A dark red flash */
+            100% { background-color: transparent; }
+        }
+
+        /* Calculated delay time readout (id is suffixed with the module id) */
+        [id^="delay-time-ms-"] {
+            font-size: 1.2em;
+            color: #ccc;
+            transition: color 0.2s ease; /* Optional: adds a smooth fade to red */
+        }
+
+        /* USB MIDI Device Selection Styles */
+        .usb-device-pair {
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #2a2a2a;
+            border: 2px solid #444;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .usb-device-pair:hover {
+            border-color: #666;
+            background: #333;
+        }
+
+        .usb-device-pair.selected {
+            border-color: #ff6b35;
+            background: rgba(255, 107, 53, 0.1);
+        }
+
+        .usb-device-pair-title {
+            font-weight: bold;
+            color: #ff6b35;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .usb-device-io {
+            font-size: 11px;
+            color: #aaa;
+            margin: 2px 0;
+            padding-left: 12px;
+        }
+
+        .usb-device-io-label {
+            color: #888;
+            font-weight: bold;
+            min-width: 50px;
+            display: inline-block;
+        }
+
+        /* Additional visual cue for hover-to-focus items */
+    .control-row.hover-focus {
+        background-color: rgba(255, 255, 255, 0.05); /* very subtle highlight */
+        border-radius: 4px;
+        transition: background-color 0.1s ease;
+    }
+</style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                POCKET EDIT
+            </div>
+
+            <div class="connection-panel">
+                <div class="connection-status">
+                    <div id="statusDot" class="status-dot"></div>
+                    <span id="statusText">Disconnected</span>
+                </div>
+                <button type="button" id="connectBtn" class="btn btn-primary">Connect</button>
+                <button type="button" id="disconnectBtn" class="btn" disabled>Disconnect</button>
+            </div>
+
+            <div class="patch-list">
+                 <div class="patch-tabs">
+                    <button type="button" id="factoryTabBtn" class="patch-tab-btn">Factory</button>
+                    <button type="button" id="userTabBtn" class="patch-tab-btn active">User</button>
+                </div>
+                <div class="patch-search-container">
+                    <input type="text" id="patchSearchInput" placeholder="Search patches...">
+                </div>
+                <div id="patchListContainer" class="patch-items-container">
+                    </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div id="editor-container" style="display: none; height: 100%; flex-direction: column; flex: 1;">
+                <div class="top-bar">
+                <div class="patch-info">
+                    <div class="patch-number" id="patchNumber"></div>
+                    <div class="patch-name" id="patchName"></div>
+                </div>
+
+                <div style="display: flex; align-items: center;">
+                    <div class="global-volume-control">
+                        <div class="control-label">Global Vol</div>
+                        <div class="slider-container">
+                            <input type="range" min="0" max="100" value="75" class="slider" data-global-param="globalVolume">
+                            <span class="slider-value">75</span>
+                        </div>
+                    </div>
+
+                    <button type="button" id="advancedSettingsBtn" class="settings-btn" aria-label="Advanced settings" aria-expanded="false">⚙️</button>
+                </div>
+            </div>
+
+            <div class="patch-volume-container">
+                <div class="patch-volume-module">
+                    <div class="module-name">🔊 Patch Vol</div>
+                    <div class="slider-container">
+                        <input type="range" min="0" max="100" value="75" class="slider" data-global-param="presetVolume">
+                        <span class="slider-value">75</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="signal-chain">
+                <div class="chain-flow">
+                    <div class="chain-module" data-module-id="0" draggable="true">
+                        <svg class="module-icon" width="80" height="130" viewBox="0 0 80 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="2" y="2" width="76" height="126" rx="10" stroke="currentColor" stroke-width="3"/>
+                        <circle cx="40" cy="32" r="14" stroke="currentColor" stroke-width="3"/>
+                        <circle cx="40" cy="100" r="8" fill="currentColor" stroke-width="2"/>
+                        <circle cx="40" cy="100" r="9" stroke="currentColor"/>
+                        <circle cx="40" cy="100" r="12" stroke="currentColor" stroke-width="2"/>
+                        <rect x="8" y="54" width="64" height="70" rx="4" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="40" cy="9" r="4" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <div class="module-status" id="module-status-0"></div>
+                        <div class="module-name">NR</div>
+                        <div class="module-type">Noise Gate</div>
+                    </div>
+                    <div class="chain-connector"></div>
+                    <div class="chain-module" data-module-id="1" draggable="true">
+                        <svg class="module-icon" width="80" height="130" viewBox="0 0 80 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 10C2 5.58172 5.58172 2 10 2H70C74.4183 2 78 5.58172 78 10V120C78 124.418 74.4183 128 70 128H10C5.58172 128 2 124.418 2 120V10Z" stroke="currentColor" stroke-width="3"/>
+                        <line x1="2" y1="48" x2="78" y2="48" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="14" cy="24" r="6" stroke="currentColor" stroke-width="2.5"/>
+                        <circle cx="31" cy="24" r="6" stroke="currentColor" stroke-width="2.5"/>
+                        <circle cx="49" cy="24" r="6" stroke="currentColor" stroke-width="2.5"/>
+                        <circle cx="66" cy="24" r="6" stroke="currentColor" stroke-width="2.5"/>
+                        <circle cx="40" cy="100" r="8" fill="currentColor" stroke-width="2"/>
+                        <circle cx="40" cy="100" r="9" stroke="currentColor"/>
+                        <circle cx="40" cy="100" r="12" stroke="currentColor" stroke-width="2"/>
+                        <rect x="8" y="68" width="64" height="55" rx="4" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="40" cy="9" r="4" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <div class="module-status" id="module-status-1"></div>
+                        <div class="module-name">FX1</div>
+                        <div class="module-type">Please sync</div>
+                    </div>
+                    <div class="chain-connector"></div>
+
+                    <div id="fixed-chain-block" draggable="false">
+                        <div class="chain-module" data-module-id="2" data-is-fixed="true">
+                            <svg class="module-icon" width="80" height="130" viewBox="0 0 80 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="2" y="2" width="76" height="126" rx="10" stroke="currentColor" stroke-width="3"/>
+                            <rect x="8" y="8" width="64" height="40" rx="4" stroke="currentColor" stroke-width="2"/>
+                            <circle cx="22" cy="28" r="7" stroke="currentColor" stroke-width="2.5"/>
+                            <circle cx="40" cy="28" r="7" stroke="currentColor" stroke-width="2.5"/>
+                            <circle cx="58" cy="28" r="7" stroke="currentColor" stroke-width="2.5"/>
+                            <rect x="20" y="65" width="40" height="40" rx="6" stroke="currentColor" stroke-width="3"/>
+                            <circle cx="40" cy="54" r="3" fill="currentColor"/>
+                            </svg>
+                            <div class="module-status" id="module-status-2"></div><div class="module-name">DRV</div><div class="module-type">Please sync</div>
+                        </div>
+                        <div class="chain-connector"></div>
+                        <div class="chain-module" data-module-id="3" data-is-fixed="true">
+                            <svg class="module-icon" width="92" height="80" viewBox="0 0 92 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <rect x="2" y="10" width="88" height="60" rx="8" stroke="currentColor" stroke-width="3"/>
+                                  <rect x="10" y="48" width="72" height="18" rx="4" stroke="currentColor" stroke-width="3"/>
+                                  <circle cx="23" cy="57" r="4" stroke="currentColor" stroke-width="2.5"/>
+                                  <circle cx="39" cy="57" r="4" stroke="currentColor" stroke-width="2.5"/>
+                                  <circle cx="54" cy="57" r="4" stroke="currentColor" stroke-width="2.5"/>
+                                  <circle cx="69" cy="57" r="4" stroke="currentColor" stroke-width="2.5"/>
+                                  <path d="M30 10 V4 H62 V10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                  <rect x="13" y="70" width="10" height="4" rx="2" fill="currentColor"/>
+                                  <rect x="69" y="70" width="10" height="4" rx="2" fill="currentColor"/>
+                                </svg>
+                            <div class="module-status" id="module-status-3"></div><div class="module-name">AMP</div><div class="module-type">Please sync</div>
+                        </div>
+                        <div class="chain-connector"></div>
+                        <div class="chain-module" data-module-id="4" data-is-fixed="true">
+                            <svg class="module-icon" width="120" height="130" viewBox="0 0 120 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                            <pattern id="meshPattern" patternUnits="userSpaceOnUse" width="8" height="8">
+                            <path d="M0 0L8 8ZM8 0L0 8Z" stroke="currentColor" stroke-width="0.75"/>
+                            </pattern>
+                            </defs>
+                            <rect x="2" y="10" width="116" height="110" rx="8" stroke="currentColor" stroke-width="3"/>
+                            <rect x="10" y="18" width="100" height="94" rx="4" fill="url(#meshPattern)"/>
+                            <rect x="10" y="18" width="100" height="94" rx="4" stroke="currentColor" stroke-width="3"/>
+                            <path d="M40 10 V4 H80 V10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                            <rect x="15" y="120" width="10" height="4" rx="2" fill="currentColor"/>
+                            <rect x="95" y="120" width="10" height="4" rx="2" fill="currentColor"/>
+                            </svg>
+                            <div class="module-status" id="module-status-4"></div><div class="module-name">IR</div><div class="module-type">Please sync</div>
+                        </div>
+                        <div class="chain-connector"></div>
+                        <div class="chain-module" data-module-id="5" data-is-fixed="true">
+                            <svg class="module-icon" width="100" height="130" viewBox="0 0 100 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="2" y="2" width="96" height="126" rx="10" stroke="currentColor" stroke-width="3"/>
+                            <rect x="15" y="12" width="8" height="60" rx="4" stroke="currentColor" stroke-width="2"/>
+                            <rect x="30" y="12" width="8" height="60" rx="4" stroke="currentColor" stroke-width="2"/>
+                            <rect x="45" y="12" width="8" height="60" rx="4" stroke="currentColor" stroke-width="2"/>
+                            <rect x="60" y="12" width="8" height="60" rx="4" stroke="currentColor" stroke-width="2"/>
+                            <rect x="75" y="12" width="8" height="60" rx="4" stroke="currentColor" stroke-width="2"/>
+                            <rect x="12" y="18" width="14" height="8" rx="3" fill="currentColor"/>
+                            <rect x="27" y="38" width="14" height="8" rx="3" fill="currentColor"/>
+                            <rect x="42" y="55" width="14" height="8" rx="3" fill="currentColor"/>
+                            <rect x="57" y="38" width="14" height="8" rx="3" fill="currentColor"/>
+                            <rect x="72" y="18" width="14" height="8" rx="3" fill="currentColor"/>
+                            <circle cx="50" cy="88" r="3" stroke="currentColor"/>
+                            <circle cx="50" cy="110" r="9" stroke="currentColor"/>
+                            <circle cx="50" cy="110" r="12" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            <div class="module-status" id="module-status-5"></div><div class="module-name">EQ</div><div class="module-type">Please sync</div>
+                        </div>
+                    </div>
+                    <div class="chain-connector"></div>
+
+                    <div class="chain-module" data-module-id="6" draggable="true">
+                        <svg class="module-icon" width="80" height="130" viewBox="0 0 80 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 10C2 5.58172 5.58172 2 10 2H70C74.4183 2 78 5.58172 78 10V120C78 124.418 74.4183 128 70 128H10C5.58172 128 2 124.418 2 120V10Z" stroke="currentColor" stroke-width="3"/>
+                        <line x1="2" y1="48" x2="78" y2="48" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="14" cy="24" r="6" stroke="currentColor" stroke-width="2.5"/>
+                        <circle cx="31" cy="24" r="6" stroke="currentColor" stroke-width="2.5"/>
+                        <circle cx="49" cy="24" r="6" stroke="currentColor" stroke-width="2.5"/>
+                        <circle cx="66" cy="24" r="6" stroke="currentColor" stroke-width="2.5"/>
+                        <circle cx="40" cy="100" r="8" fill="currentColor" stroke-width="2"/>
+                        <circle cx="40" cy="100" r="9" stroke="currentColor"/>
+                        <circle cx="40" cy="100" r="12" stroke="currentColor" stroke-width="2"/>
+                        <rect x="8" y="68" width="64" height="55" rx="4" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="40" cy="9" r="4" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <div class="module-status" id="module-status-6"></div>
+                        <div class="module-name">FX2</div>
+                        <div class="module-type">Please sync</div>
+                    </div>
+                    <div class="chain-connector"></div>
+                    <div class="chain-module" data-module-id="7" draggable="true">
+                        <svg class="module-icon" width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="50" cy="50" r="15" stroke="currentColor" stroke-width="3"/>
+                        <circle cx="50" cy="50" r="25" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.7"/>
+                        <circle cx="50" cy="50" r="35" stroke="currentColor" stroke-width="2" stroke-opacity="0.4"/>
+                        <circle cx="50" cy="50" r="45" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2"/>
+                        </svg>
+                        <div class="module-status" id="module-status-7"></div>
+                        <div class="module-name">DLY</div>
+                        <div class="module-type">Please sync</div>
+                    </div>
+                    <div class="chain-connector"></div>
+                    <div class="chain-module" data-module-id="8" draggable="true">
+                        <svg class="module-icon" width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="15" y="35" width="50" height="50" stroke="currentColor" stroke-width="3"/>
+                        <rect x="35" y="15" width="50" height="50" stroke="currentColor" stroke-width="3"/>
+                        <line x1="15" y1="35" x2="35" y2="15" stroke="currentColor" stroke-width="3"/>
+                        <line x1="65" y1="35" x2="85" y2="15" stroke="currentColor" stroke-width="3"/>
+                        <line x1="15" y1="85" x2="35" y2="65" stroke="currentColor" stroke-width="3"/>
+                        <line x1="65" y1="85" x2="85" y2="65" stroke="currentColor" stroke-width="3"/>
+                        <path d="M43 51 L49 45 L49 56 Z" fill="currentColor"/>
+                        <path d="M54 43 C 56 45, 56 55, 54 57" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        <path d="M56 41 C 59 45, 59 55, 56 59" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                        <div class="module-status" id="module-status-8"></div>
+                        <div class="module-name">RVB</div>
+                        <div class="module-type">Please sync</div>
+                    </div>
+                    <div class="chain-connector"></div>
+                    <div id="chain-terminator"></div>
+                </div>
+            </div>
+
+
+            <div class="effects-panel">
+                <div class="effect-controls" id="module-controls-0">
+                    <div class="control-section">
+                        <h4 class="module-title">...</h4>
+                        <div class="control-row">
+                            <div class="control-label">Enable</div>
+                            <div class="toggle-switch" id="module-enable-0"></div>
+                        </div>
+                    </div>
+                    <div class="control-section" id="module-params-0"></div>
+                </div>
+
+                <div class="effect-controls" id="module-controls-1">
+                    <div class="control-section">
+                        <h4 class="module-title">...</h4>
+                        <div class="control-row">
+                            <div class="control-label">Enable</div>
+                            <div class="toggle-switch" id="module-enable-1"></div>
+                        </div>
+                        <div class="control-row">
+                            <div class="control-label">Type</div>
+                            <select class="dropdown-select" id="module-type-1"></select>
+                        </div>
+                    </div>
+                    <div class="control-section" id="module-params-1"></div>
+                </div>
+
+                 <div class="effect-controls" id="module-controls-6">
+                    <div class="control-section">
+                        <h4 class="module-title">...</h4>
+                        <div class="control-row">
+                            <div class="control-label">Enable</div>
+                            <div class="toggle-switch" id="module-enable-6"></div>
+                        </div>
+                        <div class="control-row">
+                            <div class="control-label">Type</div>
+                            <select class="dropdown-select" id="module-type-6"></select>
+                        </div>
+                    </div>
+                    <div class="control-section" id="module-params-6"></div>
+                </div>
+
+                <div class="effect-controls" id="module-controls-2">
+                    <div class="control-section">
+                        <h4 class="module-title">...</h4>
+                        <div class="control-row">
+                            <div class="control-label">Enable</div>
+                            <div class="toggle-switch" id="module-enable-2"></div>
+                        </div>
+                        <div class="control-row">
+                            <div class="control-label">Type</div>
+                            <select class="dropdown-select" id="module-type-2"></select>
+                        </div>
+                    </div>
+                    <div class="control-section" id="module-params-2"></div>
+                </div>
+
+                <div class="effect-controls" id="module-controls-3">
+                    <div class="control-section">
+                        <h4 class="module-title">...</h4>
+                        <div class="control-row">
+                            <div class="control-label">Enable</div>
+                            <div class="toggle-switch" id="module-enable-3"></div>
+                        </div>
+                        <div class="control-row">
+                            <div class="control-label">Clone Mode</div>
+                            <div class="toggle-switch" id="amp-clone-mode"></div>
+                        </div>
+                        <div class="control-row">
+                            <div class="control-label">Model</div>
+                            <select class="dropdown-select" id="module-type-3"></select>
+                        </div>
+                    </div>
+                    <div class="control-section" id="module-params-3"></div>
+                </div>
+
+                <div class="effect-controls" id="module-controls-4">
+                    <div class="control-section">
+                        <h4 class="module-title">...</h4>
+                        <div class="control-row">
+                            <div class="control-label">Enable</div>
+                            <div class="toggle-switch" id="module-enable-4"></div>
+                        </div>
+                        <div class="control-row">
+                            <div class="control-label">Cabinet</div>
+                            <select class="dropdown-select" id="module-type-4"></select>
+                        </div>
+                    </div>
+                     <div class="control-section" id="module-params-4"></div>
+                </div>
+
+                <div class="effect-controls" id="module-controls-5">
+                    <div class="control-section">
+                        <h4 class="module-title">...</h4>
+                        <div class="control-row">
+                            <div class="control-label">Enable</div>
+                            <div class="toggle-switch" id="module-enable-5"></div>
+                        </div>
+                         <div class="control-row">
+                            <div class="control-label">Type</div>
+                            <select class="dropdown-select" id="module-type-5"></select>
+                        </div>
+                    </div>
+                    <div class="control-section" id="module-params-5"></div>
+                </div>
+
+                <div class="effect-controls" id="module-controls-7">
+                    <div class="control-section">
+                        <h4 class="module-title">...</h4>
+                        <div class="control-row">
+                            <div class="control-label">Enable</div>
+                            <div class="toggle-switch" id="module-enable-7"></div>
+                        </div>
+                        <div class="control-row">
+                            <div class="control-label">Type</div>
+                            <select class="dropdown-select" id="module-type-7"></select>
+                        </div>
+                    </div>
+                    <div class="control-section" id="module-params-7"></div>
+                </div>
+
+                <div class="effect-controls" id="module-controls-8">
+                    <div class="control-section">
+                        <h4 class="module-title">...</h4>
+                        <div class="control-row">
+                            <div class="control-label">Enable</div>
+                            <div class="toggle-switch" id="module-enable-8"></div>
+                        </div>
+                        <div class="control-row">
+                            <div class="control-label">Type</div>
+                            <select class="dropdown-select" id="module-type-8"></select>
+                        </div>
+                    </div>
+                    <div class="control-section" id="module-params-8"></div>
+                </div>
+            </div>
+            </div>
+        </div>
+    </div>
+    <div id="advancedSettingsPanel" class="advanced-settings-panel">
+    <h4>Advanced Settings</h4>
+
+    <div class="control-row">
+        <div class="control-label">Input Lvl</div>
+        <div class="slider-container">
+            <input type="range" min="-20" max="20" value="0" step="1" class="slider" data-global-param="inputLevel">
+            <span class="slider-value">0dB</span>
+        </div>
+    </div>
+
+    <div class="control-row">
+        <div class="control-label">FX REC Lvl</div>
+        <div class="slider-container">
+            <input type="range" min="-20" max="20" value="0" step="1" class="slider" data-global-param="fxRecLevel">
+            <span class="slider-value">0dB</span>
+        </div>
+    </div>
+
+    <div class="control-row">
+        <div class="control-label">BT REC Lvl</div>
+        <div class="slider-container">
+            <input type="range" min="-20" max="20" value="0" step="1" class="slider" data-global-param="btRecLevel">
+            <span class="slider-value">0dB</span>
+        </div>
+    </div>
+
+    <div class="control-row">
+        <div class="control-label">Mon Lvl</div>
+        <div class="slider-container">
+            <input type="range" min="-20" max="20" value="0" step="1" class="slider" data-global-param="monitorLevel">
+            <span class="slider-value">0dB</span>
+        </div>
+    </div>
+    <button type="button" id="savePresetBtn" class="btn" style="margin-top: 20px;">Save Current Preset</button>
+    <button type="button" id="exportPresetBtn" class="btn" style="margin-top: 10px;">Export Preset</button>
+    <button type="button" id="importPresetBtn" class="btn" style="margin-top: 10px;">Import Preset</button>
+    <input type="file" id="presetFileInput" accept=".json" style="display: none;">
+</div>
+    <div class="log-toggle" id="logToggle">Show Log</div>
+    <div class="log-panel" id="logPanel">
+        <div class="log-header">
+            <h4>Communication Log</h4>
+            <button type="button" class="btn" id="clearLogBtn" style="padding: 4px 8px; font-size: 10px; width: auto;">Clear</button>
+        </div>
+        <div class="debug-buttons-panel">
+            <button type="button" id="syncPresetNamesBtn" class="btn" disabled>Sync Preset Names</button>
+            <button type="button" id="syncModulesBtn" class="btn" disabled>Sync Modules</button>
+            <button type="button" id="syncUserIRsBtn" class="btn" disabled>Sync User IRs</button>
+            <button type="button" id="syncCloneAmpsBtn" class="btn" disabled>Sync Clone Amps</button>
+            <button type="button" id="syncGlobalsBtn" class="btn" disabled>Sync Global Settings</button>
+        </div>
+        <div class="manual-command-panel">
+            <input type="text" id="manualCommandInput" placeholder="Enter hex command...">
+            <button type="button" id="sendManualCommandBtn" class="btn">Send</button>
+        </div>
+        <div class="log-content" id="logContent"></div>
+    </div>
+
+    <div id="saveModal" class="advanced-settings-panel" style="top: 50%; left: 50%; transform: translate(-50%, -50%); width: 400px;">
+    <h4>Save Preset</h4>
+    <div class="control-row">
+        <div class="control-label">Name</div>
+        <input type="text" id="presetNameInput" maxlength="10">
+    </div>
+    <div class="control-row">
+        <div class="control-label">Save to Slot</div>
+        <input type="number" id="presetNumberInput" min="1" max="50">
+    </div>
+    <div style="display: flex; gap: 10px; margin-top: 15px;">
+        <button type="button" id="cancelSaveBtn" class="btn">Cancel</button>
+        <button type="button" id="confirmSaveBtn" class="btn btn-primary">Confirm & Save</button>
+    </div>
+</div>
+
+<div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+<div id="lockingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; text-align: center; color: white; font-size: 1.2em;">
+    <div>
+        <p>Trying to save preset...</p>
+        <p style="font-size: 0.8em; color: #aaa; margin-top: 5px;">This could take up to 2 minutes!</p>
+    </div>
+</div>
+
+<!-- USB MIDI Device Selection Modal -->
+<div id="usbMidiModal" class="advanced-settings-panel" style="top: 50%; left: 50%; transform: translate(-50%, -50%); width: 450px; display: none;">
+    <h4>Select USB MIDI Device</h4>
+    <div style="margin: 20px 0;">
+        <p style="color: #ccc; font-size: 12px; margin-bottom: 15px;">Found USB MIDI devices. Please select one pair (input and output):</p>
+        <div id="usbDeviceList" style="background: #1e1e1e; border: 1px solid #444; border-radius: 4px; max-height: 250px; overflow-y: auto; margin-bottom: 15px;">
+            <!-- Device pairs will be populated here -->
+        </div>
+    </div>
+    <div style="display: flex; gap: 10px; margin-top: 15px;">
+        <button type="button" id="cancelUsbBtn" class="btn">Cancel (Use BLE)</button>
+        <button type="button" id="confirmUsbBtn" class="btn btn-primary" disabled>Connect via USB</button>
+    </div>
+</div>
+
+    <script>
+        window.PocketEditData = /*POCKETEDIT-DATA*/;
+
+    /*POCKETEDIT-APP*/
+
+    /*POCKETEDIT-SHELL*/
+    </script>
+</body>
+</html>

@@ -5,6 +5,60 @@
 This single, portable HTML file unlocks the full potential of your device, making tone creation and management faster and more intuitive than ever before.
 It was created as a fun side project using 99% AI programming logic and 100% hard labour reverse engineering, learning about BLE/HCI snooping and understanding how this device works by looking at logs.
 
+## **Repository layout**
+
+The published `index.html` is a build artifact: it is generated from the sources below
+and still runs offline with a double-click, with no external requests.
+
+| Path | Contents |
+| --- | --- |
+| `src/template.html` | Markup, CSS and the script shell |
+| `src/app.js` | Application code (UI, BLE/USB transport, protocol) |
+| `data/modules.json` | Effect/module definitions (names, parameters, ranges) |
+| `data/commands.json` | SysEx command tables |
+| `index.html` | **Generated** - do not edit by hand |
+| `tools/` | Reverse-engineering helpers, build script and tests |
+
+Editing workflow (Node 18+ required):
+
+```bash
+node tools/build.mjs     # regenerate index.html from src/ and data/
+node tools/build.mjs --check   # verify index.html is up to date (CI)
+node --test "tools/tests/*.test.mjs"   # or: npm test
+```
+
+Tests run the real `src/app.js` in Node with a small DOM stub, so the protocol helpers
+(CRC, name/dB encoding, preset payload, ACK handling, write queue) are covered without
+a browser or a pedal.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request: it executes the tests,
+fails when `index.html` is out of date with `src/` + `data/`, and enforces the coverage
+floor. Nothing is installed - the project has no dependencies - so the job takes about
+a minute.
+
+> Forks: GitHub disables workflows in forked repositories until you allow them once in
+> **Settings -> Actions -> "I understand my workflows, go ahead and enable them"**.
+
+### Code coverage
+
+```bash
+npm run coverage          # line coverage of src/*.js + coverage/*.html report
+npm run coverage:min      # same, but exits 1 below the 9% floor
+COVERAGE_FUNCS=waitForAck,writeCommand node tools/coverage.mjs   # focus on functions
+```
+
+Coverage uses V8 (`NODE_V8_COVERAGE`) rather than Node's built-in table, because the app
+is loaded through `vm` with a file URL: the built-in reporter only lists byte ranges, and
+it reports nothing for code loaded that way. The script merges the per-process reports
+with OR (a line counts as covered if any test file executed it) and writes
+`coverage/index.html` (annotated source) plus `coverage/coverage.json`.
+
+The floor exists to stop the number from dropping; it is not a target. Most of the UI
+(`exportPreset`, `handleNotification`, `applyPresetState`, ...) still has no tests, which
+is why the overall number is low.
+
 
 ![screenshot](img/gui.jpg)
 
