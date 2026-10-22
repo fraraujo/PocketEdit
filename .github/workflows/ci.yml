@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'fix/**', 'feat/**']
+  pull_request:
+  workflow_dispatch:
+
+# Read-only: the workflow only needs to read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests, build sync and coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Show versions
+        run: |
+          node --version
+          npm --version
+
+      # The project has no runtime or build dependencies, so there is nothing to
+      # install. If a lockfile is ever added, switch this to `npm ci`.
+      - name: Run tests
+        run: npm test
+
+      # index.html is a build artifact: fail the job when it was not regenerated
+      # after someone edited src/ or data/.
+      - name: Check index.html is up to date
+        run: npm run check
+
+      # Keeps the coverage floor honest; the report is uploaded for inspection.
+      - name: Coverage floor
+        run: npm run coverage:min
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 14

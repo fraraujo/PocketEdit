@@ -31,6 +31,16 @@ Tests run the real `src/app.js` in Node with a small DOM stub, so the protocol h
 (CRC, name/dB encoding, preset payload, ACK handling, write queue) are covered without
 a browser or a pedal.
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request: it executes the tests,
+fails when `index.html` is out of date with `src/` + `data/`, and enforces the coverage
+floor. Nothing is installed - the project has no dependencies - so the job takes about
+a minute.
+
+> Forks: GitHub disables workflows in forked repositories until you allow them once in
+> **Settings -> Actions -> "I understand my workflows, go ahead and enable them"**.
+
 ### Code coverage
 
 ```bash
