@@ -35,7 +35,7 @@ a browser or a pedal.
 
 ```bash
 npm run coverage          # line coverage of src/*.js + coverage/*.html report
-npm run coverage:min      # same, but exits 1 below the 8% floor
+npm run coverage:min      # same, but exits 1 below the 9% floor
 COVERAGE_FUNCS=waitForAck,writeCommand node tools/coverage.mjs   # focus on functions
 ```
 

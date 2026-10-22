@@ -56,8 +56,18 @@ export function loadApp() {
     editor.commands = commands;
     editor.logs = [];
     editor.log = (message, type = 'info') => editor.logs.push({ message, type });
+    // Fields the constructor normally sets; keep them in sync with it.
     editor._writeQueue = Promise.resolve();
     editor._ackWaiters = [];
+    editor.isApplyingState = false;
+    editor.isSyncing = false;
+    editor.isWaitingForPresetDump = false;
+    editor.isWaitingForGlobals = false;
+    editor.isInitialSyncing = false;
+    editor.isPresetModified = false;
+    editor.dumpPackets = [];
+    editor.usbMidiBuffer = null;
+    editor.usbMultiPacketResponses = {};
     return editor;
   };
 

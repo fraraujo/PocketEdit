@@ -2657,11 +2657,16 @@
                     this.usbMidiBuffer = null;
                 }
 
-                // Check if this is a multi-packet response
-                // Bytes [3:4] = total number of packets (16-bit big-endian)
-                // Bytes [5:6] = current packet number (16-bit big-endian)
-                const totalPackets = (message[3] << 8) | message[4];
-                const currentPacket = (message[5] << 8) | message[6];
+                // Check if this is a multi-packet response.
+                // The message here has no 8080 header, so with respect to
+                // tools/SYSEX_PAYLOAD_FORMAT.md the indexes shift by two:
+                //   message[3:4] = Total Packets   (nibble-expanded, e.g. 0x01,0x00 -> 16)
+                //   message[5:6] = Current Packet  (nibble-expanded, 0-indexed)
+                // Nibble-expanded means two bytes carry one hex digit each, so the
+                // value is (hi << 4) | lo - NOT a 16-bit big-endian number. A name dump
+                // has 16+ packets, which is exactly where a <<8 decode breaks.
+                const totalPackets = (message[3] << 4) | message[4];
+                const currentPacket = (message[5] << 4) | message[6];
 
                 const messageHex = Array.from(message).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
                 this.log(`USB SysEx: packets ${currentPacket + 1}/${totalPackets} - ${messageHex}`, 'debug');
