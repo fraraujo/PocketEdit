@@ -41,6 +41,13 @@ a minute.
 > Forks: GitHub disables workflows in forked repositories until you allow them once in
 > **Settings -> Actions -> "I understand my workflows, go ahead and enable them"**.
 
+`.github/workflows/auto-pr.yml` opens a pull request the first time a non-`main` branch is
+pushed, and does nothing on later pushes (pushing to a branch that already has an open PR
+updates that PR). It needs **Settings -> Actions -> General -> Workflow permissions ->
+"Allow GitHub Actions to create and approve pull requests"**; without it the job fails with
+that hint. Note that the default token can only open PRs inside the same repository - a
+fork cannot open a PR against the upstream repository without a personal access token.
+
 ### Code coverage
 
 ```bash
