@@ -340,21 +340,63 @@
         .top-actions {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             margin-left: 18px;
+            padding-left: 18px;
+            border-left: 1px solid #4a4a4a;
         }
 
         .top-action {
             width: auto;
-            padding: 6px 12px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 0 11px;
             font-size: 11px;
             font-weight: bold;
+            letter-spacing: 0.2px;
             white-space: nowrap;
+            border: 1px solid #505050;
+            border-radius: 5px;
+            background: #383838;
+            color: #c8c8c8;
         }
 
-        /* Save gets the eye when there is something to save */
+        .top-action:hover:not(:disabled) {
+            background: #454545;
+            border-color: #6a6a6a;
+            color: #fff;
+        }
+
+        .action-icon {
+            width: 14px;
+            height: 14px;
+            flex: 0 0 auto;
+            opacity: 0.9;
+        }
+
+        .global-volume-control {
+            margin-left: 18px;
+        }
+
+        /* Save is the primary action; it only fills up when there is something to save */
+        .top-action.save {
+            border-color: rgba(255, 107, 53, 0.55);
+            color: #ffb08a;
+            background: rgba(255, 107, 53, 0.10);
+        }
+
+        .top-action.save:hover:not(:disabled) {
+            background: rgba(255, 107, 53, 0.2);
+            border-color: #ff6b35;
+            color: #ffd0b8;
+        }
+
         .top-action.save.pending {
             background: linear-gradient(145deg, #ff8a4c, #ff6b35);
+            border-color: #ff6b35;
             color: #1a1a1a;
             animation: save-pulse 1.8s ease-in-out infinite;
         }
@@ -387,7 +429,10 @@
             justify-content: flex-start;
             gap: 10px;
             flex-wrap: nowrap;
-            min-width: max-content;
+            /* max-content + auto margins: centred while it fits, scrollable when it
+               does not (auto margins collapse to 0 instead of clipping). */
+            width: max-content;
+            margin-inline: auto;
             padding: 6px 0;
         }
 
@@ -409,9 +454,9 @@
         .chain-scroll::-webkit-scrollbar-thumb:hover { background: #7a7a7a; }
 
         .chain-module {
-            width: 86px;
-            height: 96px;
-            padding: 16px 4px 4px; /* top padding leaves room for the ON/OFF pill */
+            width: 88px;
+            height: 104px;
+            padding: 20px 4px 6px; /* top padding leaves room for the ON/OFF pill */
             box-sizing: border-box;
             background: linear-gradient(145deg, #404040, #303030);
             border: 2px solid #555;
@@ -1000,10 +1045,12 @@
         }
 
         .module-icon {
-            width: 100%;
-            height: 44px;
+            width: 50px;
+            height: 50px;
             flex: 0 0 auto;
-            margin: 0 0 2px 0; /* fixed slot, no per-icon height differences */
+            margin: 0 0 4px 0;
+            /* preserveAspectRatio already letterboxes the drawing inside this box,
+               so icons never stretch - they just get a consistent slot. */
         }
 
         .patch-items-container.locked {
@@ -1269,12 +1316,21 @@
                     </div>
 
                     <div class="top-actions">
-                        <button type="button" id="quickSaveBtn" class="btn btn-primary top-action save" disabled
-                                title="Save the current preset to the device (Ctrl+S)">💾 Save</button>
+                        <button type="button" id="quickSaveBtn" class="btn top-action save" disabled
+                                title="Save the current preset to the device (Ctrl+S)">
+                            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+                            <span>Save</span>
+                        </button>
                         <button type="button" id="quickImportBtn" class="btn top-action" disabled
-                                title="Import a preset from a JSON file and send it to the device">📂 Import</button>
+                                title="Import a preset from a JSON file and send it to the device">
+                            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                            <span>Import</span>
+                        </button>
                         <button type="button" id="quickExportBtn" class="btn top-action" disabled
-                                title="Export the current preset to a JSON file">⬇️ Export</button>
+                                title="Export the current preset to a JSON file">
+                            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg>
+                            <span>Export</span>
+                        </button>
                     </div>
 
                     <div class="global-volume-control">
