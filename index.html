@@ -4155,6 +4155,20 @@
                 this.sendModuleState(moduleId, enableToggle.classList.contains('on'));
             }
 
+            // Hides the connector that has no module after it. Without this, the chain
+            // ends with an arrow pointing at nothing (it was only recalculated after a
+            // drag/drop or a device update, never on load).
+            refreshChainConnectors() {
+                const container = document.querySelector('.chain-flow');
+                if (!container?.querySelectorAll) return;
+                container.querySelectorAll('.chain-connector').forEach((connector) => {
+                    const next = connector.nextElementSibling;
+                    const followedByModule = Boolean(next
+                        && (next.classList.contains('chain-module') || next.id === 'fixed-chain-block'));
+                    connector.classList.toggle('is-last-connector', !followedByModule);
+                });
+            }
+
             // Finds the signal-chain tile for a module id.
             getModuleTile(moduleId) {
                 const id = parseInt(moduleId, 10);
@@ -6151,11 +6165,7 @@
                                     }
                                 });
                                 container.insertBefore(fragment, document.getElementById('chain-terminator'));
-                                container.querySelectorAll('.chain-connector').forEach(conn => {
-                                    const next = conn.nextElementSibling;
-                                    conn.classList.toggle('is-last-connector',
-                                        !(next && (next.classList.contains('chain-module') || next.id === 'fixed-chain-block')));
-                                });
+                                this.refreshChainConnectors();
                             });
                             return true;
                         }
@@ -6775,15 +6785,7 @@
                                 }
                             });
                             container.insertBefore(newOrderFragment, document.getElementById('chain-terminator'));
-                            const connectors = container.querySelectorAll('.chain-connector');
-                            connectors.forEach(connector => {
-                                const nextEl = connector.nextElementSibling;
-                                if (nextEl && (nextEl.classList.contains('chain-module') || nextEl.id === 'fixed-chain-block' )) {
-                                    connector.classList.remove('is-last-connector');
-                                } else {
-                                    connector.classList.add('is-last-connector');
-                                }
-                            });
+                            this.refreshChainConnectors();
                         }
 
                         if (decodedData.parameters) {
@@ -7039,22 +7041,16 @@
                     }
                 });
 
+                // Initial state: the trailing connector must not show an arrow.
+                this.refreshChainConnectors();
+
                 container.addEventListener('dragend', () => {
                     if (draggedElement) {
                         draggedElement.classList.remove('dragging');
                         draggedElement = null;
                         this.updateChainOrder();
 
-                        // Add this logic to update the connectors
-                        const connectors = container.querySelectorAll('.chain-connector');
-                        connectors.forEach(connector => {
-                            const nextEl = connector.nextElementSibling;
-                            if (nextEl && (nextEl.classList.contains('chain-module') || nextEl.id === 'fixed-chain-block')) {
-                                connector.classList.remove('is-last-connector');
-                            } else {
-                                connector.classList.add('is-last-connector');
-                            }
-                        });
+                        this.refreshChainConnectors();
                     }
                 });
             }

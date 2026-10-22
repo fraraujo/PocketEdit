@@ -88,3 +88,40 @@ test('module power control is separate from selection', () => {
   assert.equal(pill.getAttribute('aria-pressed'), 'false');
   assert.equal(pill.textContent, 'OFF');
 });
+
+test('refreshChainConnectors hides only the arrow with nothing after it', () => {
+  const ed = makeEditor();
+  const makeNode = (kind) => {
+    const classes = new Set(kind ? [kind] : []);
+    return {
+      id: '',
+      classList: {
+        add: (c) => classes.add(c),
+        remove: (c) => classes.delete(c),
+        contains: (c) => classes.has(c),
+        toggle: (c, force) => { const on = force === undefined ? !classes.has(c) : force; on ? classes.add(c) : classes.delete(c); },
+      },
+      _classes: classes,
+    };
+  };
+
+  const terminator = makeNode('');
+  const midConnector = makeNode('chain-connector');
+  const lastConnector = makeNode('chain-connector');
+  const rvb = makeNode('chain-module');
+  midConnector.nextElementSibling = rvb;
+  rvb.nextElementSibling = lastConnector;
+  lastConnector.nextElementSibling = terminator;
+
+  const container = { querySelectorAll: (sel) => (sel === '.chain-connector' ? [midConnector, lastConnector] : []) };
+  const hadQuerySelector = document.querySelector;
+  document.querySelector = (sel) => (sel === '.chain-flow' ? container : null);
+  try {
+    ed.refreshChainConnectors();
+  } finally {
+    document.querySelector = hadQuerySelector;
+  }
+
+  assert.ok(!midConnector.classList.contains('is-last-connector'), 'connector before a module stays visible');
+  assert.ok(lastConnector.classList.contains('is-last-connector'), 'trailing connector is hidden');
+});
