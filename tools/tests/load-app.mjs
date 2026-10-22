@@ -25,6 +25,7 @@ export function loadApp() {
     navigator: {},
     window: { PocketEditData: { modules, commands } },
     showToast: (message, type) => toasts.push({ message, type }),
+    confirm: () => true,
   };
   sandbox.globalThis = sandbox;
   const context = vm.createContext(sandbox);
@@ -68,6 +69,8 @@ export function loadApp() {
     editor.dumpPackets = [];
     editor.usbMidiBuffer = null;
     editor.usbMultiPacketResponses = {};
+    editor._swapSource = null;
+    editor.isSwappingPresets = false;
     return editor;
   };
 

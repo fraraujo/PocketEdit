@@ -228,6 +228,67 @@
             border-color: #0088ff;
         }
 
+        /* User presets can be swapped (reordered) from the list */
+        .patch-item.swappable {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding-right: 6px;
+        }
+
+        .patch-item-label {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .patch-swap {
+            flex: 0 0 auto;
+            width: 20px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            background: transparent;
+            color: #9a9a9a;
+            font-size: 12px;
+            line-height: 1;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .patch-item:hover .patch-swap,
+        .patch-swap:focus-visible {
+            opacity: 1;
+        }
+
+        .patch-swap:hover {
+            color: #ffb08a;
+            border-color: rgba(255, 107, 53, 0.5);
+            background: rgba(255, 107, 53, 0.12);
+        }
+
+        .patch-swap:focus-visible {
+            outline: 2px solid #ff6b35;
+            outline-offset: 1px;
+        }
+
+        /* Armed swap: the source slot blinks until the target is picked */
+        .patch-item.swap-source {
+            border-color: #ff6b35;
+            background: rgba(255, 107, 53, 0.18);
+            animation: swap-armed 1.4s ease-in-out infinite;
+        }
+
+        @keyframes swap-armed {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 53, 0.5); }
+            50% { box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15); }
+        }
+
         /* Main Content Area */
         .main-content {
             flex: 1;
@@ -1802,6 +1863,8 @@
                 this._writeQueue = Promise.resolve();
                 this.lastSendFailed = false;
                 this._reportedSendFailure = false;
+                this._swapSource = null;
+                this.isSwappingPresets = false;
 
                 // USB MIDI connection properties
                 this.connectionType = null; // 'ble' or 'usb'
@@ -3348,16 +3411,70 @@
                 const item = document.createElement('div');
                 item.className = 'patch-item';
 
-                item.textContent = patchData.displayText;
+                const label = document.createElement('span');
+                label.className = 'patch-item-label';
+                label.textContent = patchData.displayText;
+                item.appendChild(label);
+
                 item.title = patchData.displayText;
                 item.dataset.code = patchData.command;
                 item.dataset.baseName = patchData.baseName;
 
+                // Only user presets can be reordered (factory slots are read-only).
+                if (this.activePatchTab === 'user') {
+                    item.classList.add('swappable');
+                    const swapBtn = document.createElement('button');
+                    swapBtn.type = 'button';
+                    swapBtn.className = 'patch-swap';
+                    swapBtn.textContent = '⇄';
+                    swapBtn.title = `Swap ${patchData.baseName} with another user preset`;
+                    swapBtn.setAttribute('aria-label', `Swap ${patchData.baseName} with another user preset`);
+                    swapBtn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        this.beginPresetSwap(patchData.baseName);
+                    });
+                    item.appendChild(swapBtn);
+                }
+
+                if (this._swapSource === patchData.baseName) item.classList.add('swap-source');
+
                 item.addEventListener('click', () => {
+                    if (this._swapSource) {
+                        // A swap is armed: this click chooses the other slot.
+                        const source = this._swapSource;
+                        this._swapSource = null;
+                        this.renderPatchList();
+                        const from = parseInt(source.slice(1), 10) - 1;
+                        const to = parseInt(patchData.baseName.slice(1), 10) - 1;
+                        this.swapUserPresets(from, to);
+                        return;
+                    }
                     this.updatePatchInfo(item, true);
                 });
 
                 this.patchListContainer.appendChild(item);
+            }
+
+            beginPresetSwap(baseName) {
+                if (!this.isConnected) {
+                    this.showToast('Connect to the device before swapping presets.', 'warning');
+                    return;
+                }
+                if (this._swapSource === baseName) {
+                    this._swapSource = null;
+                    this.showToast('Swap cancelled.', 'info');
+                } else {
+                    this._swapSource = baseName;
+                    this.showToast(`Select the preset to swap with ${baseName}, or press Esc to cancel.`, 'info', 6000);
+                }
+                this.renderPatchList();
+            }
+
+            cancelPresetSwap() {
+                if (!this._swapSource) return;
+                this._swapSource = null;
+                this.renderPatchList();
+                this.showToast('Swap cancelled.', 'info');
             }
 
             // Keeps the ARIA state of toggle switches/status indicators in sync with
@@ -3675,6 +3792,11 @@
                 this.quickSaveBtn?.addEventListener('click', () => this.showSaveModal());
                 this.quickImportBtn?.addEventListener('click', () => this.importPreset());
                 this.quickExportBtn?.addEventListener('click', () => this.exportPreset());
+
+                // Esc cancels an armed preset swap.
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape' && this._swapSource) this.cancelPresetSwap();
+                });
 
                 // Ctrl/Cmd+S saves, like in most editors.
                 document.addEventListener('keydown', (event) => {
@@ -5730,64 +5852,215 @@
                 this.hideSaveModal();
                 this.lockingOverlay.style.display = 'flex';
                 this.isBruteForcing = true;
-                let wasSaved = false;
-
                 try {
                     const presetName = this.presetNameInput.value;
                     const presetNumber = parseInt(this.presetNumberInput.value, 10);
-                    const presetValue = presetNumber - 1;
-                    let presetBytesHex;
+                    const saved = await this._savePresetToSlot(presetNumber, presetName);
 
-                    if (presetNumber >= 1 && presetNumber <= 50) {
-                        const presetValueHex = presetValue.toString(16).padStart(2, '0');
-                        const upperNibble = presetValueHex[0];
-                        const lowerNibble = presetValueHex[1];
-                        presetBytesHex = `0${upperNibble}0${lowerNibble}`;
-                    } else {
-                        throw new Error('Invalid Preset Number. Must be between 1 and 50.');
-                    }
-
-                    const encodedNameHex = this.encodeNameForSave(presetName);
-                    const payloadTemplate = "0001000001030101040a{PRESET_BYTES}000000000000{ENCODED_NAME}000000000000";
-                    let finalPayload = payloadTemplate.replace('{ENCODED_NAME}', encodedNameHex);
-                    finalPayload = finalPayload.replace('{PRESET_BYTES}', presetBytesHex);
-
-                    // Remove the extra 'zero nibble': "0001000001060101040a" -> "010010114a..."
-                    let inputHex = finalPayload.replace(/0(.)/g, '$1');
-
-                    // Calculate CRC
-                    const crc8 = this.calculateSMBusPEC(inputHex);
-
-                    // Expand the CRC with zeroes: 0xC5 -> "0C05"
-                    const expandedCRC = crc8.split('').map(nibble => '0' + nibble).join('');
-
-                    // Rebuild an expanded SysEx to be sent
-                    const outSysEx = "8080f0" + expandedCRC + finalPayload + "f7";
-
-                    await this.writeCommand(outSysEx);
-                    const wasSuccessful = await this.waitForAck(SonicakeBLEEditor.SUCCESS_ACK_CODE);
-
-                    if (wasSuccessful) {
-                        this.log(`✅ PRESET SAVED! Checksum: ${crc8.toUpperCase()}`, 'success');
-                        wasSaved = true;
-
+                    if (saved) {
                         this.updateUIAfterSave(presetNumber, presetName);
                         this.isPresetModified = false;
                         this.updatePresetModifiedUI(false);
+                    } else if (this.lastSendFailed) {
+                        this.log('Save failed: the command could not be sent to the device. Try again.', 'error');
+                    } else {
+                        this.log('Save failed: no ACK from the device (timeout or NACK). The checksum itself is not the problem.', 'error');
                     }
-
-                    if (!wasSaved) {
-                        if (this.lastSendFailed) {
-                            this.log('Save failed: the command could not be sent to the device. Try again.', 'error');
-                        } else {
-                            this.log('Save failed: no ACK from the device (timeout or NACK). The checksum itself is not the problem.', 'error');
-                        }
-                    }
-
+                    return saved;
                 } catch (error) {
                     this.log(`An error occurred during save: ${error.message}`, 'error');
+                    return false;
                 } finally {
                     this.isBruteForcing = false;
+                    this.lockingOverlay.style.display = 'none';
+                }
+            }
+
+            // Writes the *current* device state into a user slot (1-based) with a name.
+            // Shared by the Save dialog and by the preset swap.
+            async _savePresetToSlot(presetNumber, presetName) {
+                if (!(presetNumber >= 1 && presetNumber <= 50)) {
+                    throw new Error('Invalid Preset Number. Must be between 1 and 50.');
+                }
+
+                const presetValueHex = (presetNumber - 1).toString(16).padStart(2, '0');
+                const presetBytesHex = `0${presetValueHex[0]}0${presetValueHex[1]}`;
+                const encodedNameHex = this.encodeNameForSave(presetName);
+                const payloadTemplate = "0001000001030101040a{PRESET_BYTES}000000000000{ENCODED_NAME}000000000000";
+                let finalPayload = payloadTemplate.replace('{ENCODED_NAME}', encodedNameHex);
+                finalPayload = finalPayload.replace('{PRESET_BYTES}', presetBytesHex);
+
+                // Remove the extra 'zero nibble': "0001000001060101040a" -> "010010114a..."
+                const inputHex = finalPayload.replace(/0(.)/g, '$1');
+                const crc8 = this.calculateSMBusPEC(inputHex);
+                const expandedCRC = crc8.split('').map(nibble => '0' + nibble).join('');
+                const outSysEx = "8080f0" + expandedCRC + finalPayload + "f7";
+
+                await this.writeCommand(outSysEx);
+                const wasSuccessful = await this.waitForAck(SonicakeBLEEditor.SUCCESS_ACK_CODE);
+                if (wasSuccessful) {
+                    this.log(`✅ PRESET SAVED! Slot ${presetNumber}, checksum ${crc8.toUpperCase()}`, 'success');
+                }
+                return wasSuccessful;
+            }
+
+            // ---------------------------------------------------------------
+            // USER PRESET SWAP
+            // The device has no "copy preset" command: a preset is the current
+            // state, and saving writes that state into a slot. So a swap has to
+            // (1) read both slots, (2) push A's state to the device and save it
+            // into B, (3) push B's state and save it into A.
+            // Both slots are backed up to JSON before anything is written.
+            // ---------------------------------------------------------------
+
+            async readPresetState(index) {
+                const baseName = `P${String(index + 1).padStart(2, '0')}`;
+                const selectCommand = this.commands.presetCommands?.user?.[baseName];
+                if (!selectCommand) throw new Error(`No preset command for ${baseName}`);
+
+                this.setSyncState(`Reading ${baseName}...`);
+                const read = new Promise((resolve, reject) => {
+                    this._presetRead = { resolve, reject };
+                    this._presetReadTimer = setTimeout(() => {
+                        if (!this._presetRead) return;
+                        this._presetRead = null;
+                        reject(new Error(`Timed out reading ${baseName}`));
+                    }, 8000);
+                });
+
+                try {
+                    await this.writeCommand(selectCommand);
+                    await new Promise((resolve) => setTimeout(resolve, 200));
+                    this.dumpPackets = [];
+                    this.isWaitingForPresetDump = true;
+                    await this.writeCommand('8080F0000900010000000201020401F7');
+                    const data = await read;
+                    const name = this.userPatchesData[index]?.decodedName || baseName;
+                    return { index, baseName, name, data };
+                } finally {
+                    clearTimeout(this._presetReadTimer);
+                    this._presetRead = null;
+                    this.setSyncState(null);
+                }
+            }
+
+            async writePresetState(targetIndex, name, data) {
+                const baseName = `P${String(targetIndex + 1).padStart(2, '0')}`;
+                this.setSyncState(`Writing ${baseName}...`);
+                try {
+                    // Put the captured state in the UI (also fixes the chain order,
+                    // which syncPresetStateToDevice reads from the DOM), push it to the
+                    // device, then store it in the slot by name.
+                    this.applyPresetState(data);
+                    await this.syncPresetStateToDevice(data);
+                    const saved = await this._savePresetToSlot(targetIndex + 1, name);
+                    if (!saved) throw new Error(`The device did not acknowledge saving ${baseName}`);
+                } finally {
+                    this.setSyncState(null);
+                }
+            }
+
+            // Human-readable JSON for a captured preset, so a swap can be undone with
+            // the existing Import button (same shape the Export button produces).
+            fullPresetDataToExportJson(entry) {
+                const data = entry.data;
+                const modules = {};
+                for (const moduleDef of this.definitions.modules) {
+                    const moduleId = moduleDef.moduleId;
+                    const fxId = data.selectedEffects?.[moduleId] ?? moduleDef.effects[0];
+                    const effect = this.definitions.effectLibrary[fxId];
+                    const parameters = {};
+                    for (const param of effect?.alg || []) {
+                        const value = data.parameters?.[moduleId]?.[param.algId];
+                        if (value !== undefined) parameters[param.name] = value;
+                    }
+                    modules[moduleDef.name] = {
+                        enabled: Boolean(data.states?.[moduleDef.name]),
+                        effect: effect ? effect.name : null,
+                        parameters,
+                    };
+                }
+                return {
+                    version: '1.0',
+                    presetName: entry.name,
+                    description: `Backup of ${entry.baseName} before a preset swap`,
+                    ampMode: data.ampMode || 'Normal',
+                    presetVolume: data.presetVolume ?? 75,
+                    modules,
+                    signalChain: data.order || [],
+                    metadata: {
+                        createdDate: new Date().toISOString().split('T')[0],
+                        author: 'PocketEdit',
+                        tags: ['backup'],
+                    },
+                };
+            }
+
+            downloadJson(json, fileName) {
+                const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
+
+            async swapUserPresets(indexA, indexB) {
+                if (!this.isConnected) {
+                    this.showToast('Connect to the device before swapping presets.', 'warning');
+                    return false;
+                }
+                if (indexA === indexB) return false;
+                if (this.isSwappingPresets) {
+                    this.showToast('A preset swap is already running.', 'warning');
+                    return false;
+                }
+
+                const baseA = `P${String(indexA + 1).padStart(2, '0')}`;
+                const baseB = `P${String(indexB + 1).padStart(2, '0')}`;
+                const nameA = this.userPatchesData[indexA]?.decodedName || baseA;
+                const nameB = this.userPatchesData[indexB]?.decodedName || baseB;
+
+                const question = `Swap ${baseA} "${nameA}" with ${baseB} "${nameB}"?\n\n`
+                    + 'Both presets are downloaded as JSON backups first, but the device slots are rewritten.';
+                if (typeof confirm === 'function' && !confirm(question)) return false;
+
+                this.isSwappingPresets = true;
+                this._suppressPresetAutosync = true;
+                this.lockingOverlay.style.display = 'flex';
+                try {
+                    const a = await this.readPresetState(indexA);
+                    const b = await this.readPresetState(indexB);
+
+                    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+                    this.downloadJson(this.fullPresetDataToExportJson(a), `backup_${a.baseName}_${stamp}.json`);
+                    this.downloadJson(this.fullPresetDataToExportJson(b), `backup_${b.baseName}_${stamp}.json`);
+
+                    await this.writePresetState(indexB, a.name, a.data);
+                    await this.writePresetState(indexA, b.name, b.data);
+
+                    // Reflect the swap locally and refresh the names from the device.
+                    if (this.userPatchesData[indexA] && this.userPatchesData[indexB]) {
+                        const tmp = this.userPatchesData[indexA];
+                        this.userPatchesData[indexA] = this.userPatchesData[indexB];
+                        this.userPatchesData[indexB] = tmp;
+                        this.userPatchesData[indexA].baseName = baseA;
+                        this.userPatchesData[indexB].baseName = baseB;
+                    }
+                    this.renderPatchList();
+                    await this.syncPresetNames();
+                    this.showToast(`Swapped ${baseA} and ${baseB}.`, 'success');
+                    return true;
+                } catch (error) {
+                    this.log(`Preset swap failed: ${error.message}`, 'error');
+                    this.showToast(`Swap failed: ${error.message}`, 'error', 8000);
+                    return false;
+                } finally {
+                    this.isSwappingPresets = false;
+                    this._suppressPresetAutosync = false;
                     this.lockingOverlay.style.display = 'none';
                 }
             }
@@ -5886,6 +6159,14 @@
                             const parameterData = this.decodeParameterValues(this.dumpPackets, effectData.selectedEffects);
 
                             const fullPresetData = { ...stateData, ...effectData, ...parameterData };
+
+                            // A programmatic read (preset swap) is waiting for this dump.
+                            if (this._presetRead) {
+                                clearTimeout(this._presetReadTimer);
+                                const resolveRead = this._presetRead.resolve;
+                                this._presetRead = null;
+                                resolveRead(fullPresetData);
+                            }
 
                             this.applyPresetState(fullPresetData);
                         } catch (error) {
@@ -6180,6 +6461,10 @@
                                 : `F${String(idx - 49).padStart(2, '0')}`;
                             this.log(`📡 Preset: ${label} (index ${idx})`, 'received');
 
+                            if (this._suppressPresetAutosync) {
+                                // A programmatic read/swap is driving the UI itself.
+                                return true;
+                            }
                             this.selectPresetByIndex(idx);
                             return true;
                         }
