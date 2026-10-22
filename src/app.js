@@ -1440,6 +1440,15 @@
                 this.syncModulesBtn = document.getElementById('syncModulesBtn');
                 this.statusDot = document.getElementById('statusDot');
                 this.statusText = document.getElementById('statusText');
+                this.syncState = document.getElementById('syncState');
+                this.syncStateText = document.getElementById('syncStateText');
+                this.topStatus = document.getElementById('topStatus');
+                this.topStatusText = document.getElementById('topStatusText');
+                this.unsavedBadge = document.getElementById('unsavedBadge');
+                this.quickSaveBtn = document.getElementById('quickSaveBtn');
+                this.quickImportBtn = document.getElementById('quickImportBtn');
+                this.quickExportBtn = document.getElementById('quickExportBtn');
+                this.chainScroll = document.getElementById('chainScroll');
                 this.logPanel = document.getElementById('logPanel');
                 this.logToggle = document.getElementById('logToggle');
                 this.logContent = document.getElementById('logContent');
@@ -1596,17 +1605,40 @@
                 el.setAttribute('aria-checked', String(el.classList.contains('on')));
             }
 
+            // Reflects "unsaved changes" in three places: the asterisk next to the preset
+            // name (kept for compatibility), a visible badge, and a highlighted Save button.
             updatePresetModifiedUI(isModified) {
                 const patchNameEl = document.getElementById('patchName');
-                if (!patchNameEl) return;
-
-                let currentName = patchNameEl.textContent;
-
-                if (isModified && !currentName.endsWith('*')) {
-                    patchNameEl.textContent = currentName + '*';
-                } else if (!isModified && currentName.endsWith('*')) {
-                    patchNameEl.textContent = currentName.slice(0, -1);
+                if (patchNameEl) {
+                    const currentName = patchNameEl.textContent;
+                    if (isModified && !currentName.endsWith('*')) {
+                        patchNameEl.textContent = currentName + '*';
+                    } else if (!isModified && currentName.endsWith('*')) {
+                        patchNameEl.textContent = currentName.slice(0, -1);
+                    }
+                    patchNameEl.classList.toggle('modified', isModified);
                 }
+
+                if (this.unsavedBadge) this.unsavedBadge.hidden = !isModified;
+
+                const saveButtons = [this.quickSaveBtn, this.savePresetBtn];
+                for (const btn of saveButtons) {
+                    if (!btn) continue;
+                    btn.classList.toggle('pending', isModified);
+                    btn.setAttribute('aria-label', isModified ? 'Save preset (unsaved changes)' : 'Save preset');
+                }
+
+                document.title = isModified ? 'Pocket Edit *' : 'Pocket Edit';
+            }
+
+            // Warn before closing the tab with unsaved edits.
+            installUnloadGuard() {
+                window.addEventListener('beforeunload', (event) => {
+                    if (!this.isPresetModified) return;
+                    event.preventDefault();
+                    event.returnValue = ''; // required by some browsers
+                    return '';
+                });
             }
 
 
@@ -1702,6 +1734,7 @@
 
                     if (moduleElement) {
                         moduleElement.querySelector('.module-name').textContent = moduleDef.name;
+                        this.ensureModulePowerControl(moduleElement, moduleId);
                     }
                     if (controlPanel) {
                         controlPanel.querySelector('.module-title').textContent = moduleDef.name;
@@ -1847,10 +1880,9 @@
                 });
                 this.moduleElements.forEach(module => {
                     module.addEventListener('click', event => {
-                        if (event.target.closest('.module-status')) {
-                            // Click was on the status indicator, so we ignore it here and let the status click handler manage it.
-                            return;
-                        }
+                        // The power pill and the status dot are activation controls, not
+                        // selection: clicking them must not change which module is edited.
+                        if (event.target.closest('.module-power, .module-status')) return;
                         this.selectModule(parseInt(module.dataset.moduleId, 10));
                     });
                 });
@@ -1872,10 +1904,25 @@
                 this.cancelSaveBtn.addEventListener('click', () => this.hideSaveModal());
                 this.confirmSaveBtn.addEventListener('click', () => this.saveCurrentPreset());
 
-                // Export/Import preset buttons
+                // Export/Import preset buttons (advanced panel)
                 document.getElementById('exportPresetBtn').addEventListener('click', () => this.exportPreset());
                 document.getElementById('importPresetBtn').addEventListener('click', () => this.importPreset());
                 document.getElementById('presetFileInput').addEventListener('change', (e) => this.onPresetFileSelected(e));
+
+                // Always-visible actions in the top bar
+                this.quickSaveBtn?.addEventListener('click', () => this.showSaveModal());
+                this.quickImportBtn?.addEventListener('click', () => this.importPreset());
+                this.quickExportBtn?.addEventListener('click', () => this.exportPreset());
+
+                // Ctrl/Cmd+S saves, like in most editors.
+                document.addEventListener('keydown', (event) => {
+                    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+                        event.preventDefault();
+                        this.showSaveModal();
+                    }
+                });
+
+                this.installUnloadGuard();
 
                 // USB MIDI modal event listeners
                 this.confirmUsbBtn.addEventListener('click', () => this.confirmUsbDeviceSelection());
@@ -2284,7 +2331,14 @@
                 if (this.activeModuleId === moduleId) return;
                 this.activeModuleId = moduleId;
                 this.moduleElements.forEach(m => {
-                    m.classList.toggle('active', parseInt(m.dataset.moduleId, 10) === moduleId);
+                    const isActive = parseInt(m.dataset.moduleId, 10) === moduleId;
+                    m.classList.toggle('active', isActive);
+                    m.setAttribute('aria-selected', String(isActive));
+                    if (isActive) {
+                        // Keep the edited module visible inside the horizontal strip without
+                        // scrolling the page vertically.
+                        m.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
+                    }
                 });
                 this.effectControls.forEach(c => {
                     c.classList.toggle('active', c.id === `module-controls-${moduleId}`);
@@ -2303,15 +2357,78 @@
                 this.log('UI Unlocked: Sync complete.', 'info');
             }
 
+            // Adds the explicit ON/OFF control to a module tile. Clicking the tile selects
+            // the module for editing; this pill is the only thing that switches it on/off.
+            getModulePowerControl(moduleElement) {
+                if (!moduleElement) return null;
+                // Only classList is used here: for SVG elements className is an
+                // SVGAnimatedString, so string operations on it throw.
+                return moduleElement.querySelector?.('.module-power')
+                    || Array.from(moduleElement.children || []).find((child) => child.classList?.contains('module-power'))
+                    || null;
+            }
+
+            ensureModulePowerControl(moduleElement, moduleId) {
+                if (this.getModulePowerControl(moduleElement)) return;
+
+                const pill = document.createElement('button');
+                pill.type = 'button';
+                pill.classList.add('module-power');
+                pill.dataset.moduleId = String(moduleId);
+                pill.setAttribute('aria-pressed', 'false');
+                pill.setAttribute('aria-label', `Enable or disable module ${moduleId}`);
+                pill.textContent = 'OFF';
+                // Keep the tile from being selected/dragged by the activation control.
+                pill.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.toggleModulePower(moduleId);
+                });
+                pill.addEventListener('pointerdown', (event) => event.stopPropagation());
+                moduleElement.appendChild(pill);
+            }
+
+            toggleModulePower(moduleId) {
+                const enableToggle = document.getElementById(`module-enable-${moduleId}`);
+                if (!enableToggle || enableToggle.classList.contains('locked')) return;
+                enableToggle.classList.toggle('on');
+                this._syncToggleAria(enableToggle);
+                this.updateModuleStatus(moduleId);
+                this.sendModuleState(moduleId, enableToggle.classList.contains('on'));
+            }
+
+            // Finds the signal-chain tile for a module id.
+            getModuleTile(moduleId) {
+                const id = parseInt(moduleId, 10);
+                return document.querySelector(`.chain-module[data-module-id="${id}"]`)
+                    || Array.from(this.moduleElements || []).find((el) => parseInt(el.dataset.moduleId, 10) === id)
+                    || null;
+            }
+
             updateModuleStatus(moduleId) {
                 const statusElement = document.getElementById(`module-status-${moduleId}`);
                 const enableToggle = document.getElementById(`module-enable-${moduleId}`);
-                const moduleElement = document.querySelector(`[data-module-id="${moduleId}"]`);
-                if (enableToggle && statusElement && moduleElement) {
-                    this._syncToggleAria(enableToggle);
-                    const isOn = enableToggle.classList.contains('on');
+                const moduleElement = this.getModuleTile(moduleId);
+                if (!enableToggle) return;
+
+                const isOn = enableToggle.classList.contains('on');
+                this._syncToggleAria(enableToggle);
+
+                if (statusElement) {
                     statusElement.classList.toggle('on', isOn);
+                    statusElement.title = isOn ? 'Effect is ON' : 'Effect is OFF';
+                }
+
+                const pill = this.getModulePowerControl(moduleElement);
+                if (pill) {
+                    pill.setAttribute('aria-pressed', String(isOn));
+                    pill.textContent = isOn ? 'ON' : 'OFF';
+                    pill.title = isOn ? 'Click to disable this effect' : 'Click to enable this effect';
+                }
+
+                if (moduleElement) {
                     moduleElement.classList.toggle('disabled', !isOn);
+                    moduleElement.classList.toggle('enabled', isOn);
                 }
             }
 
@@ -2803,6 +2920,7 @@
                     if (this.patchListContainer?.classList) this.patchListContainer.classList.remove('locked');
                     this.finishInitialSync();
 
+                    this.setSyncState(null);
                     this.log(`Session state reset (${reason}).`, 'info');
                 } finally {
                     this.sessionResetInProgress = false;
@@ -2833,17 +2951,55 @@
 
             updateConnectionUI() {
                 const isConnected = this.isConnected;
-                const statusLabel = this.connectionType === 'usb' ? 'USB Connected' : this.connectionType === 'ble' ? 'BLE Connected' : 'Disconnected';
+                const transport = this.connectionType === 'usb' ? 'USB' : this.connectionType === 'ble' ? 'Bluetooth' : null;
+                const statusLabel = transport ? `${transport} connected` : 'Disconnected';
+                const detailedLabel = transport ? `${transport} · ${this.device?.name || this.selectedUsbDevice?.name || 'device'}` : 'No device';
 
                 this.connectBtn.disabled = isConnected;
                 this.disconnectBtn.disabled = !isConnected;
-                this.syncPresetNamesBtn.disabled = !isConnected;
-                this.syncModulesBtn.disabled = !isConnected;
-                this.syncUserIRsBtn.disabled = !isConnected;
-                this.syncCloneAmpsBtn.disabled = !isConnected;
-                this.syncGlobalsBtn.disabled = !isConnected;
+                for (const btn of [this.syncPresetNamesBtn, this.syncModulesBtn, this.syncUserIRsBtn, this.syncCloneAmpsBtn, this.syncGlobalsBtn]) {
+                    if (btn) btn.disabled = !isConnected;
+                }
+
+                // Saving and importing talk to the device; exporting does not.
+                for (const btn of [this.quickSaveBtn, this.quickImportBtn]) {
+                    if (btn) btn.disabled = !isConnected;
+                }
+                if (this.quickExportBtn) this.quickExportBtn.disabled = false;
+
                 this.statusDot.classList.toggle('connected', isConnected);
                 this.statusText.textContent = statusLabel;
+                this.statusText.title = detailedLabel;
+
+                if (this.topStatus && this.topStatusText) {
+                    this.topStatus.classList.toggle('connected', isConnected);
+                    this.topStatus.classList.toggle('syncing', isConnected && Boolean(this._syncStateLabel));
+                    this.topStatusText.textContent = this._syncStateLabel || (transport ? `${transport} connected` : 'Disconnected');
+                    this.topStatus.title = this._syncStateLabel || detailedLabel;
+                }
+
+                if (!isConnected) this.setSyncState(null);
+            }
+
+            // Shows what the app is currently waiting for from the device. Passing null
+            // hides the indicator. Visible in both the sidebar and the top bar chip, so a
+            // long sync is not mistaken for a frozen UI.
+            setSyncState(label) {
+                this._syncStateLabel = label || null;
+                if (this.syncState) this.syncState.hidden = !label;
+                if (this.syncStateText) this.syncStateText.textContent = label || '';
+                if (this.topStatus) {
+                    this.topStatus.classList.toggle('syncing', Boolean(label));
+                    if (label) this.topStatusText.textContent = label;
+                    else this.updateTopStatusIdle();
+                }
+            }
+
+            // Restores the top-bar chip to the connection-only label.
+            updateTopStatusIdle() {
+                if (!this.topStatus || !this.topStatusText) return;
+                const transport = this.connectionType === 'usb' ? 'USB' : this.connectionType === 'ble' ? 'Bluetooth' : null;
+                this.topStatusText.textContent = transport ? `${transport} connected` : 'Disconnected';
             }
 
             // Serialized command transport. Every send is chained onto this._writeQueue so
@@ -3558,6 +3714,7 @@
                 if (!this.isInitialSyncing) return;
 
                 this.isInitialSyncing = false;
+                this.setSyncState(null);
                 this.unlockPatchList();
 
                 const overlay = this.lockingOverlay || document.getElementById('lockingOverlay');
@@ -3585,6 +3742,7 @@
                     return;
                 }
                 this.log('Requesting global settings...', 'info');
+                this.setSyncState('Reading global settings...');
                 this.isWaitingForGlobals = true;
 
                 let timeout = null;
@@ -3592,6 +3750,7 @@
                     timeout = setTimeout(() => {
                         this.isWaitingForGlobals = false;
                         this.globalSettingsPromiseResolve = null;
+                        this.setSyncState(null);
                         if (isAutomated) reject(new Error('Global settings sync timed out.'));
                         else resolve();
                     }, 3000);
@@ -3600,6 +3759,7 @@
                         clearTimeout(timeout);
                         this.isWaitingForGlobals = false;
                         this.globalSettingsPromiseResolve = null;
+                        this.setSyncState(null);
                         resolve();
                     };
                 });
@@ -4319,6 +4479,7 @@
                 }
 
                 this.log('Starting preset name sync (using terminator packet)...', 'info');
+                this.setSyncState('Syncing preset names...');
                 this.isSyncing = true;
                 this.dumpPackets = [];
                 this.syncPresetNamesBtn.disabled = true;
@@ -4330,6 +4491,7 @@
                     this.nameSyncTimeoutId = setTimeout(() => {
                         if (this.isSyncing) { // This will be true if the terminator packet was never received.
                             this.isSyncing = false;
+                            this.setSyncState(null);
                             this.syncPresetNamesBtn.disabled = !this.isConnected;
                             this.syncPresetNamesBtn.textContent = 'Sync Preset Names';
                             const errorMsg = 'Preset name sync timed out: Terminator packet not received.';
@@ -4353,6 +4515,7 @@
 
             processAndDisplayDump() {
                 this.isSyncing = false;
+                this.setSyncState(null);
                 this.syncPresetNamesBtn.disabled = false;
                 this.syncPresetNamesBtn.textContent = 'Sync Preset Names';
                 this.log('All SysEx name packets received. Processing...', 'info');
@@ -4385,6 +4548,7 @@
                     return;
                 }
                 this.lockPatchList();
+                this.setSyncState('Reading preset state...');
                 if (this.syncTimeoutId) {
                     clearTimeout(this.syncTimeoutId);
                 }
@@ -4407,6 +4571,7 @@
                 this.syncTimeoutId = setTimeout(() => {
                     if (this.isWaitingForPresetDump) {
                         this.isWaitingForPresetDump = false;
+                        this.setSyncState(null);
                         this.log('Preset state sync timed out.', 'error');
                         this.unlockPatchList();
                     }
@@ -4419,11 +4584,13 @@
                     return;
                 }
                 this.log('Requesting User IR names...', 'info');
+                this.setSyncState('Reading user IR names...');
 
                 let timeout = null;
                 const request = new Promise((resolve, reject) => {
                     timeout = setTimeout(() => {
                         this.irNamePromiseResolve = null;
+                        this.setSyncState(null);
                         if (isAutomated) reject(new Error('User IR name sync timed out.'));
                         else resolve();
                     }, 3000);
@@ -4431,6 +4598,7 @@
                     this.irNamePromiseResolve = () => {
                         clearTimeout(timeout);
                         this.irNamePromiseResolve = null;
+                        this.setSyncState(null);
                         resolve();
                     };
                 });
@@ -4445,11 +4613,13 @@
                     return;
                 }
                 this.log('Requesting Clone Amp names...', 'info');
+                this.setSyncState('Reading clone amp names...');
 
                 let timeout = null;
                 const request = new Promise((resolve, reject) => {
                     timeout = setTimeout(() => {
                         this.cloneNamePromiseResolve = null;
+                        this.setSyncState(null);
                         if (isAutomated) reject(new Error('Clone Amp name sync timed out.'));
                         else resolve();
                     }, 3000);
@@ -4457,6 +4627,7 @@
                     this.cloneNamePromiseResolve = () => {
                         clearTimeout(timeout);
                         this.cloneNamePromiseResolve = null;
+                        this.setSyncState(null);
                         resolve();
                     };
                 });
@@ -5086,6 +5257,17 @@
 
                 container.addEventListener('dragover', e => {
                     e.preventDefault();
+
+                    // The chain is a horizontal strip now: nudge the scroll position when
+                    // the pointer approaches an edge, otherwise you cannot drag far.
+                    const scroller = container.closest('.chain-scroll');
+                    if (scroller) {
+                        const rect = scroller.getBoundingClientRect();
+                        const edge = 60;
+                        if (e.clientX < rect.left + edge) scroller.scrollLeft -= 14;
+                        else if (e.clientX > rect.right - edge) scroller.scrollLeft += 14;
+                    }
+
                     const afterElement = this.getDragAfterElement(container, e.clientX);
                     const connector = draggedElement.nextElementSibling;
 

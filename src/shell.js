@@ -114,7 +114,7 @@
             }
             else if (currentlyHoveredControl.classList.contains('toggle-switch') || currentlyHoveredControl.classList.contains('chain-module')) {
                 const toggle = currentlyHoveredControl.classList.contains('chain-module') ? 
-                    currentlyHoveredControl.querySelector('.module-status') : currentlyHoveredControl;
+                    currentlyHoveredControl.querySelector('.module-power') : currentlyHoveredControl;
                 
                 if (toggle) {
                     // Prevent rapid flipping by recording last flip timestamp
@@ -179,7 +179,7 @@
                 else if (currentlyHoveredControl.classList.contains('toggle-switch') || currentlyHoveredControl.classList.contains('chain-module')) {
                     // Direction doesn't matter for toggles on key press, just flip it
                     const toggle = currentlyHoveredControl.classList.contains('chain-module') ? 
-                        currentlyHoveredControl.querySelector('.module-status') : currentlyHoveredControl;
+                        currentlyHoveredControl.querySelector('.module-power') : currentlyHoveredControl;
                     if (toggle) {
                         const now = Date.now();
                         const lastFlip = parseInt(toggle.dataset.lastKeyFlip || "0");
@@ -243,7 +243,7 @@
                 } 
                 else if (currentlyHoveredControl.classList.contains('toggle-switch') || currentlyHoveredControl.classList.contains('chain-module')) {
                     const toggle = currentlyHoveredControl.classList.contains('chain-module') ? 
-                        currentlyHoveredControl.querySelector('.module-status') : currentlyHoveredControl;
+                        currentlyHoveredControl.querySelector('.module-power') : currentlyHoveredControl;
                     if (toggle) toggle.click();
                 }
             }
