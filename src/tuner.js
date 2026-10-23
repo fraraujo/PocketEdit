@@ -438,7 +438,8 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
   // passed in, so this can run (and be tested) outside the browser.
   class TunerController {
     // Must match the SVG paths in src/template.html.
-    static GAUGE = { cx: 140, cy: 140, radius: 104, halfSpan: 60 };
+    // halfSpan 90 = a full half circle: +-50 cents reaches the horizontal diameter.
+    static GAUGE = { cx: 140, cy: 140, radius: 104, halfSpan: 90, tail: 12 };
 
     constructor(options = {}) {
       this.env = options.env || (typeof window !== 'undefined' ? window : globalThis);
@@ -964,6 +965,24 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       }
     }
 
+    // Places the needle line so its tail always sits on the pivot and its tip lies
+    // on the arc for the given cents value.
+    _positionNeedle(line, cents) {
+      const geometry = TunerController.GAUGE;
+      const degrees = 270 + cents * (geometry.halfSpan / 50);
+      const radians = (degrees * Math.PI) / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      const tipRadius = geometry.radius - 16;
+      const tailRadius = geometry.tail;
+
+      line.setAttribute('x1', (geometry.cx - cos * tailRadius).toFixed(2));
+      line.setAttribute('y1', (geometry.cy - sin * tailRadius).toFixed(2));
+      line.setAttribute('x2', (geometry.cx + cos * tipRadius).toFixed(2));
+      line.setAttribute('y2', (geometry.cy + sin * tipRadius).toFixed(2));
+      line.removeAttribute?.('transform');
+    }
+
     _render(model) {
       const e = this.elements;
       const noteText = model.note || '--';
@@ -975,12 +994,10 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
         e.frequency.textContent = model.frequency ? `${model.frequency.toFixed(1)} Hz` : '-- Hz';
       }
       if (e.needle) {
-        // The gauge sweeps 120 degrees: +-50 cents maps to +-60 degrees.
-        const clamped = Math.max(-50, Math.min(50, model.needleCents || 0));
-        const degrees = clamped * (TunerController.GAUGE.halfSpan / 50);
-        if (typeof e.needle.setAttribute === 'function') {
-          e.needle.setAttribute('transform', `rotate(${degrees.toFixed(2)} 140 140)`);
-        }
+        // Draw the needle from explicit end points instead of rotating it: a CSS
+        // transform-origin and an SVG rotate() attribute combine differently across
+        // engines (the needle drifted away from the pivot), while coordinates cannot.
+        this._positionNeedle(e.needle, Math.max(-50, Math.min(50, model.needleCents || 0)));
       }
       if (e.cents) {
         e.cents.textContent = model.frequency
@@ -1031,9 +1048,7 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       if (e.note) e.note.textContent = '--';
       if (e.frequency) e.frequency.textContent = '-- Hz';
       if (e.cents) e.cents.textContent = '--';
-      if (e.needle && typeof e.needle.setAttribute === 'function') {
-        e.needle.setAttribute('transform', 'rotate(0 140 140)');
-      }
+      if (e.needle) this._positionNeedle(e.needle, 0);
       if (e.prevNote) e.prevNote.textContent = '--';
       if (e.nextNote) e.nextNote.textContent = '--';
       if (e.level) e.level.style.width = '0%';

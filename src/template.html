@@ -912,7 +912,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: min(470px, 94vw);
+            width: min(500px, 94vw);
             max-height: 92vh;
             overflow-y: auto;
             background: linear-gradient(160deg, #323232, #242424);
@@ -983,7 +983,7 @@
             display: block;
             width: 100%;
             height: auto;
-            max-height: 210px;
+            max-height: 230px;
             overflow: visible;
         }
 
@@ -1025,8 +1025,6 @@
             stroke-width: 3;
             stroke-linecap: round;
             filter: drop-shadow(0 0 4px rgba(255, 107, 53, 0.8));
-            transition: transform 0.08s linear;
-            transform-origin: 140px 140px;
         }
 
         .tuner-panel[data-state="in-tune"] .tuner-needle-line {
@@ -1044,8 +1042,8 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0 3%;
-            margin-top: -14px;
+            padding: 0 1%;
+            margin-top: -6px;
             font-size: 10px;
             color: #7f7f7f;
             letter-spacing: 0.3px;
@@ -2190,8 +2188,8 @@
 
     <div class="tuner-gauge">
         <svg id="tunerGauge" viewBox="0 0 280 170" role="img" aria-label="Cents scale from -50 to +50">
-            <path class="tuner-arc" d="M 49.93 88 A 104 104 0 0 1 230.07 88" />
-            <path class="tuner-zone-arc" d="M 136.74 36.01 A 104 104 0 0 1 143.26 36.01" />
+            <path class="tuner-arc" d="M 36 140 A 104 104 0 0 1 244 140" />
+            <path class="tuner-zone-arc" d="M 135.1 36.1 A 104 104 0 0 1 144.9 36.1" />
             <g id="tunerTicks" class="tuner-ticks"></g>
             <line id="tunerNeedle" class="tuner-needle-line" x1="140" y1="152" x2="140" y2="52" />
             <circle class="tuner-pivot" cx="140" cy="140" r="5" />

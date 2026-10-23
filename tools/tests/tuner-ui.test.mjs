@@ -285,10 +285,17 @@ test('needle follows the cents value on the arc', async () => {
   const buffer = new Float32Array(4096);
   for (let i = 0; i < buffer.length; i++) buffer[i] = 0.3 * Math.sin(2 * Math.PI * 440 * i / SR);
   for (let i = 0; i < 8; i++) controller._handleSamples(buffer);
-  const transform = elements.needle.getAttribute('transform');
-  assert.match(transform, /^rotate\(-?\d+(\.\d+)? 140 140\)$/, transform);
-  const degrees = Number(transform.match(/rotate\((-?[\d.]+)/)[1]);
-  assert.ok(Math.abs(degrees) < 12, `in-tune needle stays near centre, got ${degrees}`);
+  // The needle is drawn from explicit points: the tail must stay on the pivot (140,140)
+  // and the tip on the arc, so it cannot drift away from the centre.
+  const x1 = Number(elements.needle.getAttribute('x1'));
+  const y1 = Number(elements.needle.getAttribute('y1'));
+  const x2 = Number(elements.needle.getAttribute('x2'));
+  const y2 = Number(elements.needle.getAttribute('y2'));
+  const tailDistance = Math.hypot(x1 - 140, y1 - 140);
+  const tipDistance = Math.hypot(x2 - 140, y2 - 140);
+  assert.ok(Math.abs(tailDistance - 12) < 0.2, `tail sits on the pivot radius, got ${tailDistance}`);
+  assert.ok(Math.abs(tipDistance - 88) < 0.2, `tip lies on the arc, got ${tipDistance}`);
+  assert.ok(Math.abs(x2 - 140) < 8, `in-tune needle stays near centre, got x=${x2}`);
 
   // Neighbour notes at both ends of the scale (A4 -> G#4 / A#4)
   assert.equal(elements.prevNote.textContent, '♭ G#4');
