@@ -457,6 +457,42 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       this._currentDeviceId = null;
 
       this._syncA4Controls();
+      this._buildGauge();
+    }
+
+    // Tick marks for the curved cents scale. The arc itself is static markup; the
+    // ticks are generated from the same geometry (centre 120,100, radius 86,
+    // +-60 degrees for +-50 cents).
+    _buildGauge() {
+      const group = this.elements.ticks;
+      const doc = this.env.document;
+      if (!group || typeof doc?.createElementNS !== 'function') return;
+
+      const NS = 'http://www.w3.org/2000/svg';
+      while (group.firstChild) group.removeChild(group.firstChild);
+
+      const cx = 120;
+      const cy = 100;
+      const radius = 86;
+      const point = (degrees, r) => ({
+        x: cx + r * Math.cos((degrees * Math.PI) / 180),
+        y: cy + r * Math.sin((degrees * Math.PI) / 180),
+      });
+
+      for (let cents = -50; cents <= 50; cents += 10) {
+        const degrees = 270 + (cents / 50) * 60;
+        const major = cents % 25 === 0;
+        const outer = point(degrees, radius);
+        const inner = point(degrees, radius - (major ? 12 : 6));
+
+        const line = doc.createElementNS(NS, 'line');
+        line.setAttribute('x1', outer.x.toFixed(2));
+        line.setAttribute('y1', outer.y.toFixed(2));
+        line.setAttribute('x2', inner.x.toFixed(2));
+        line.setAttribute('y2', inner.y.toFixed(2));
+        line.setAttribute('class', cents === 0 ? 'centre' : major ? 'major' : 'minor');
+        group.appendChild(line);
+      }
     }
 
     // ------------------------------------------------------------ persistence
@@ -476,6 +512,22 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
 
     getStoredInputLabel() {
       return this._storageGet(STORAGE_KEYS.inputLabel);
+    }
+
+    // The MIDI/BLE connection already knows which hardware is in use; Web MIDI does
+    // not expose its audio endpoint, so the device name is the only link between the
+    // two. Prefer the matching audio input over the system default.
+    setPreferredDeviceName(name) {
+      this.preferredDeviceName = name ? String(name) : null;
+      return this.preferredDeviceName;
+    }
+
+    _normalizeLabel(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/\b(midi|usb|audio|input|output|port|interface|1|2|3)\b/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
     }
 
     // --------------------------------------------------------------- lifecycle
@@ -713,20 +765,49 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       return target;
     }
 
-    // PocketMaster first, then the stored label, then the system default.
+    // Priority: the device already connected over USB/BLE MIDI, then PocketMaster by
+    // name, then the user's stored choice, then the system default.
     _pickDevice(preferredDeviceId, preferredLabel) {
       if (!this._devices.length) return null;
       if (preferredDeviceId) {
         const exact = this._devices.find((device) => device.deviceId === preferredDeviceId);
         if (exact) return exact;
       }
-      const pocket = this._devices.find((device) => /pocket\s*master|pocketmaster|pocket/i.test(device.label || ''));
+
+      const connected = this._matchConnectedDevice();
+      if (connected) return connected;
+
+      const pocket = this._devices.find((device) => /pocket\s*master|pocketmaster|pocket|sonic\s*master/i.test(device.label || ''));
       if (pocket) return pocket;
+
       if (preferredLabel) {
         const stored = this._devices.find((device) => device.label === preferredLabel);
         if (stored) return stored;
       }
       return this._devices.find((device) => device.deviceId === 'default') || this._devices[0];
+    }
+
+    _matchConnectedDevice() {
+      const wanted = this._normalizeLabel(this.preferredDeviceName);
+      if (!wanted) return null;
+
+      const candidates = this._devices.filter((device) => device.label);
+      // 1) same normalised name
+      const exact = candidates.find((device) => this._normalizeLabel(device.label) === wanted);
+      if (exact) return exact;
+      // 2) one contains the other ("Pocket Master" vs "Pocket Master USB Audio")
+      const partial = candidates.find((device) => {
+        const label = this._normalizeLabel(device.label);
+        return label && wanted && (label.includes(wanted) || wanted.includes(label));
+      });
+      if (partial) return partial;
+      // 3) the distinctive words match ("pocket", "master", "sonicake")
+      const tokens = wanted.split(' ').filter((token) => token.length > 3);
+      if (!tokens.length) return null;
+      return candidates.find((device) => {
+        const label = this._normalizeLabel(device.label);
+        return tokens.every((token) => label.includes(token));
+      }) || null;
     }
 
     async selectInput(deviceId) {
@@ -867,9 +948,12 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
         e.frequency.textContent = model.frequency ? `${model.frequency.toFixed(1)} Hz` : '-- Hz';
       }
       if (e.needle) {
-        // -50 cents -> left edge, +50 cents -> right edge (the track is the scale).
+        // The gauge sweeps 120 degrees: +-50 cents maps to +-60 degrees.
         const clamped = Math.max(-50, Math.min(50, model.needleCents || 0));
-        e.needle.style.left = `${50 + clamped}%`;
+        const degrees = clamped * 1.2;
+        if (typeof e.needle.setAttribute === 'function') {
+          e.needle.setAttribute('transform', `rotate(${degrees.toFixed(2)} 120 100)`);
+        }
       }
       if (e.cents) {
         e.cents.textContent = model.frequency
@@ -909,7 +993,9 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       if (e.note) e.note.textContent = '--';
       if (e.frequency) e.frequency.textContent = '-- Hz';
       if (e.cents) e.cents.textContent = '--';
-      if (e.needle) e.needle.style.left = '50%';
+      if (e.needle && typeof e.needle.setAttribute === 'function') {
+        e.needle.setAttribute('transform', 'rotate(0 120 100)');
+      }
       if (e.level) e.level.style.width = '0%';
       if (e.confidence) e.confidence.style.width = '0%';
       if (e.confidenceText) e.confidenceText.textContent = '--';

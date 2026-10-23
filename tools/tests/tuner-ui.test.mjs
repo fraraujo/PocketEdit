@@ -245,3 +245,46 @@ test('silence clears the reading', async () => {
   assert.equal(elements.verdict.dataset.state, 'silent');
   await controller.close();
 });
+
+
+test('the device already connected over USB MIDI is preferred over the system default', async () => {
+  const devices = [
+    { deviceId: 'default', label: 'Default Audio' },
+    { deviceId: 'builtin', label: 'Built-in Audio Analog Stereo' },
+    { deviceId: 'pm', label: 'Pocket Master USB Audio' },
+  ];
+  const { controller, env } = makeController({ devices });
+  controller._devices = devices; // as set by _refreshDevices() after permission
+  env.localStorage.setItem('pocketedit.tuner.inputLabel', 'Built-in Audio Analog Stereo');
+  controller.setPreferredDeviceName('Pocket Master MIDI 1');
+  const picked = controller._pickDevice(null, 'Built-in Audio Analog Stereo');
+  assert.equal(picked.deviceId, 'pm', 'connected device wins over the stored choice');
+});
+
+test('connected device matching is tolerant to suffixes and separators', async () => {
+  const devices = [
+    { deviceId: 'builtin', label: 'Built-in Audio' },
+    { deviceId: 'pm', label: 'Sonicake Pocket-Master' },
+  ];
+  const { controller } = makeController({ devices });
+  controller._devices = devices;
+  controller.setPreferredDeviceName('Pocket Master');
+  assert.equal(controller._pickDevice(null, null).deviceId, 'pm');
+  controller.setPreferredDeviceName('Sonicake Pocket Master MIDI 1');
+  assert.equal(controller._pickDevice(null, null).deviceId, 'pm');
+});
+
+test('needle follows the cents value on the arc', async () => {
+  const { controller, elements } = makeController({ devices: DEVICES });
+  await controller.open();
+  await drain();
+  const SR = controller.detector.sampleRate;
+  const buffer = new Float32Array(4096);
+  for (let i = 0; i < buffer.length; i++) buffer[i] = 0.3 * Math.sin(2 * Math.PI * 440 * i / SR);
+  for (let i = 0; i < 8; i++) controller._handleSamples(buffer);
+  const transform = elements.needle.getAttribute('transform');
+  assert.match(transform, /^rotate\(-?\d+(\.\d+)? 120 100\)$/, transform);
+  const degrees = Number(transform.match(/rotate\((-?[\d.]+)/)[1]);
+  assert.ok(Math.abs(degrees) < 12, `in-tune needle stays near centre, got ${degrees}`);
+  await controller.close();
+});

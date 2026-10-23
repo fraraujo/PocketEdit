@@ -38,8 +38,10 @@ Click **Tuner** in the top bar (or press `T`) and allow microphone access. The t
 uses the processed USB audio from the PocketMaster, works without a MIDI/BLE connection
 and does not modify the preset, the effects or the pedal state.
 
-- Select the input in the panel if the PocketMaster is not picked automatically
-  (the device whose name matches `Pocket` is preferred and remembered by label).
+- The input already connected over USB/BLE MIDI is preferred: the tuner matches its
+  name against the audio inputs (Web MIDI does not expose the audio endpoint, so the
+  name is the only link). Otherwise an input named like the pedal is used, then the
+  device you picked before (remembered by label), then the system default.
 - Reference A4 is adjustable from 430 to 450 Hz (0.5 Hz steps) and persisted.
 - The reading is smoothed (median + note hysteresis) and reports silence, weak signal,
   clipping, unstable signal and input disconnection.

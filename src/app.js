@@ -1691,6 +1691,7 @@
                         note: el('tunerNote'),
                         frequency: el('tunerFrequency'),
                         needle: el('tunerNeedle'),
+                        ticks: el('tunerTicks'),
                         cents: el('tunerCents'),
                         verdict: el('tunerVerdict'),
                         announcer: el('tunerAnnouncer'),
@@ -1707,9 +1708,16 @@
                 return this.tuner;
             }
 
+            // Name of the hardware already connected over USB/BLE MIDI. The tuner
+            // uses it to pick the matching audio input instead of the system default.
+            connectedDeviceName() {
+                return this.selectedUsbDevice?.name || this.device?.name || this.usbDevicePairs?.[0]?.name || null;
+            }
+
             async openTuner() {
                 const tuner = this.createTuner();
                 if (!tuner) return;
+                tuner.setPreferredDeviceName(this.connectedDeviceName());
                 this.tunerOpen = true;
                 this.tunerBtn?.setAttribute('aria-pressed', 'true');
                 await tuner.open();

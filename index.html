@@ -974,59 +974,79 @@
             font-variant-numeric: tabular-nums;
         }
 
-        .tuner-scale {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin: 14px 0 4px;
+        /* Curved cents gauge (SVG): arc + ticks built once by TunerController. */
+        .tuner-gauge {
+            margin: 10px 0 2px;
         }
 
-        .tuner-flat,
-        .tuner-sharp {
-            color: #888;
-            font-size: 14px;
-            width: 12px;
-            text-align: center;
+        .tuner-gauge svg {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-height: 128px;
+            overflow: visible;
         }
 
-        .tuner-track {
-            position: relative;
-            flex: 1;
-            height: 26px;
-            border-radius: 13px;
-            background: #1c1c1c;
-            border: 1px solid #444;
-            overflow: hidden;
+        .tuner-arc {
+            fill: none;
+            stroke: #3d3d3d;
+            stroke-width: 6;
+            stroke-linecap: round;
         }
 
-        .tuner-zone {
-            position: absolute;
-            left: 50%;
-            top: 0;
-            bottom: 0;
-            width: 6%;
-            transform: translateX(-50%);
-            background: rgba(76, 175, 80, 0.25);
-            border-left: 1px solid rgba(76, 175, 80, 0.6);
-            border-right: 1px solid rgba(76, 175, 80, 0.6);
+        .tuner-zone-arc {
+            fill: none;
+            stroke: rgba(76, 175, 80, 0.85);
+            stroke-width: 7;
+            stroke-linecap: butt;
         }
 
-        .tuner-needle {
-            position: absolute;
-            left: 50%;
-            top: 2px;
-            bottom: 2px;
-            width: 3px;
-            transform: translateX(-50%);
-            border-radius: 2px;
-            background: #ff6b35;
-            box-shadow: 0 0 8px rgba(255, 107, 53, 0.7);
+        .tuner-ticks line {
+            stroke: #6b6b6b;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+        }
+
+        .tuner-ticks line.major { stroke: #9a9a9a; stroke-width: 2; }
+        .tuner-ticks line.centre { stroke: #5fbf63; stroke-width: 2.5; }
+
+        .tuner-ticks text {
+            fill: #7f7f7f;
+            font-size: 8px;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            font-family: inherit;
+        }
+
+        .tuner-needle-line {
+            stroke: #ff6b35;
+            stroke-width: 3;
+            stroke-linecap: round;
+            filter: drop-shadow(0 0 4px rgba(255, 107, 53, 0.8));
             transition: transform 0.08s linear;
+            transform-origin: 120px 100px;
         }
 
-        .tuner-panel[data-state="in-tune"] .tuner-needle {
-            background: #4caf50;
-            box-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
+        .tuner-panel[data-state="in-tune"] .tuner-needle-line {
+            stroke: #4caf50;
+            filter: drop-shadow(0 0 5px rgba(76, 175, 80, 0.9));
+        }
+
+        .tuner-pivot {
+            fill: #ff6b35;
+        }
+
+        .tuner-panel[data-state="in-tune"] .tuner-pivot { fill: #4caf50; }
+
+        .tuner-gauge-labels {
+            display: flex;
+            justify-content: space-between;
+            /* the arc spans 45..195 of a 240 wide viewBox, so inset the labels to match */
+            padding: 0 17%;
+            margin-top: -8px;
+            font-size: 9px;
+            color: #7f7f7f;
+            letter-spacing: 0.3px;
         }
 
         .tuner-cents {
@@ -2156,13 +2176,17 @@
         <div class="tuner-frequency" id="tunerFrequency">-- Hz</div>
     </div>
 
-    <div class="tuner-scale">
-        <span class="tuner-flat" aria-hidden="true">♭</span>
-        <div class="tuner-track">
-            <div class="tuner-zone" aria-hidden="true"></div>
-            <div class="tuner-needle" id="tunerNeedle"></div>
+    <div class="tuner-gauge">
+        <svg id="tunerGauge" viewBox="0 0 240 118" role="img" aria-label="Cents scale from -50 to +50">
+            <path class="tuner-arc" d="M 45.5 57 A 86 86 0 0 1 194.5 57" />
+            <path class="tuner-zone-arc" d="M 117.3 14 A 86 86 0 0 1 122.7 14" />
+            <g id="tunerTicks" class="tuner-ticks"></g>
+            <line id="tunerNeedle" class="tuner-needle-line" x1="120" y1="100" x2="120" y2="24" />
+            <circle class="tuner-pivot" cx="120" cy="100" r="4" />
+        </svg>
+        <div class="tuner-gauge-labels" aria-hidden="true">
+            <span>♭ -50</span><span>-25</span><span>0</span><span>+25</span><span>+50 ♯</span>
         </div>
-        <span class="tuner-sharp" aria-hidden="true">♯</span>
     </div>
     <div class="tuner-cents" id="tunerCents">--</div>
 
@@ -2695,6 +2719,42 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       this._currentDeviceId = null;
 
       this._syncA4Controls();
+      this._buildGauge();
+    }
+
+    // Tick marks for the curved cents scale. The arc itself is static markup; the
+    // ticks are generated from the same geometry (centre 120,100, radius 86,
+    // +-60 degrees for +-50 cents).
+    _buildGauge() {
+      const group = this.elements.ticks;
+      const doc = this.env.document;
+      if (!group || typeof doc?.createElementNS !== 'function') return;
+
+      const NS = 'http://www.w3.org/2000/svg';
+      while (group.firstChild) group.removeChild(group.firstChild);
+
+      const cx = 120;
+      const cy = 100;
+      const radius = 86;
+      const point = (degrees, r) => ({
+        x: cx + r * Math.cos((degrees * Math.PI) / 180),
+        y: cy + r * Math.sin((degrees * Math.PI) / 180),
+      });
+
+      for (let cents = -50; cents <= 50; cents += 10) {
+        const degrees = 270 + (cents / 50) * 60;
+        const major = cents % 25 === 0;
+        const outer = point(degrees, radius);
+        const inner = point(degrees, radius - (major ? 12 : 6));
+
+        const line = doc.createElementNS(NS, 'line');
+        line.setAttribute('x1', outer.x.toFixed(2));
+        line.setAttribute('y1', outer.y.toFixed(2));
+        line.setAttribute('x2', inner.x.toFixed(2));
+        line.setAttribute('y2', inner.y.toFixed(2));
+        line.setAttribute('class', cents === 0 ? 'centre' : major ? 'major' : 'minor');
+        group.appendChild(line);
+      }
     }
 
     // ------------------------------------------------------------ persistence
@@ -2714,6 +2774,22 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
 
     getStoredInputLabel() {
       return this._storageGet(STORAGE_KEYS.inputLabel);
+    }
+
+    // The MIDI/BLE connection already knows which hardware is in use; Web MIDI does
+    // not expose its audio endpoint, so the device name is the only link between the
+    // two. Prefer the matching audio input over the system default.
+    setPreferredDeviceName(name) {
+      this.preferredDeviceName = name ? String(name) : null;
+      return this.preferredDeviceName;
+    }
+
+    _normalizeLabel(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/\b(midi|usb|audio|input|output|port|interface|1|2|3)\b/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
     }
 
     // --------------------------------------------------------------- lifecycle
@@ -2951,20 +3027,49 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       return target;
     }
 
-    // PocketMaster first, then the stored label, then the system default.
+    // Priority: the device already connected over USB/BLE MIDI, then PocketMaster by
+    // name, then the user's stored choice, then the system default.
     _pickDevice(preferredDeviceId, preferredLabel) {
       if (!this._devices.length) return null;
       if (preferredDeviceId) {
         const exact = this._devices.find((device) => device.deviceId === preferredDeviceId);
         if (exact) return exact;
       }
-      const pocket = this._devices.find((device) => /pocket\s*master|pocketmaster|pocket/i.test(device.label || ''));
+
+      const connected = this._matchConnectedDevice();
+      if (connected) return connected;
+
+      const pocket = this._devices.find((device) => /pocket\s*master|pocketmaster|pocket|sonic\s*master/i.test(device.label || ''));
       if (pocket) return pocket;
+
       if (preferredLabel) {
         const stored = this._devices.find((device) => device.label === preferredLabel);
         if (stored) return stored;
       }
       return this._devices.find((device) => device.deviceId === 'default') || this._devices[0];
+    }
+
+    _matchConnectedDevice() {
+      const wanted = this._normalizeLabel(this.preferredDeviceName);
+      if (!wanted) return null;
+
+      const candidates = this._devices.filter((device) => device.label);
+      // 1) same normalised name
+      const exact = candidates.find((device) => this._normalizeLabel(device.label) === wanted);
+      if (exact) return exact;
+      // 2) one contains the other ("Pocket Master" vs "Pocket Master USB Audio")
+      const partial = candidates.find((device) => {
+        const label = this._normalizeLabel(device.label);
+        return label && wanted && (label.includes(wanted) || wanted.includes(label));
+      });
+      if (partial) return partial;
+      // 3) the distinctive words match ("pocket", "master", "sonicake")
+      const tokens = wanted.split(' ').filter((token) => token.length > 3);
+      if (!tokens.length) return null;
+      return candidates.find((device) => {
+        const label = this._normalizeLabel(device.label);
+        return tokens.every((token) => label.includes(token));
+      }) || null;
     }
 
     async selectInput(deviceId) {
@@ -3105,9 +3210,12 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
         e.frequency.textContent = model.frequency ? `${model.frequency.toFixed(1)} Hz` : '-- Hz';
       }
       if (e.needle) {
-        // -50 cents -> left edge, +50 cents -> right edge (the track is the scale).
+        // The gauge sweeps 120 degrees: +-50 cents maps to +-60 degrees.
         const clamped = Math.max(-50, Math.min(50, model.needleCents || 0));
-        e.needle.style.left = `${50 + clamped}%`;
+        const degrees = clamped * 1.2;
+        if (typeof e.needle.setAttribute === 'function') {
+          e.needle.setAttribute('transform', `rotate(${degrees.toFixed(2)} 120 100)`);
+        }
       }
       if (e.cents) {
         e.cents.textContent = model.frequency
@@ -3147,7 +3255,9 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       if (e.note) e.note.textContent = '--';
       if (e.frequency) e.frequency.textContent = '-- Hz';
       if (e.cents) e.cents.textContent = '--';
-      if (e.needle) e.needle.style.left = '50%';
+      if (e.needle && typeof e.needle.setAttribute === 'function') {
+        e.needle.setAttribute('transform', 'rotate(0 120 100)');
+      }
       if (e.level) e.level.style.width = '0%';
       if (e.confidence) e.confidence.style.width = '0%';
       if (e.confidenceText) e.confidenceText.textContent = '--';
@@ -4858,6 +4968,7 @@ if (typeof window !== 'undefined') window.PocketTuner = PocketTuner;
                         note: el('tunerNote'),
                         frequency: el('tunerFrequency'),
                         needle: el('tunerNeedle'),
+                        ticks: el('tunerTicks'),
                         cents: el('tunerCents'),
                         verdict: el('tunerVerdict'),
                         announcer: el('tunerAnnouncer'),
@@ -4874,9 +4985,16 @@ if (typeof window !== 'undefined') window.PocketTuner = PocketTuner;
                 return this.tuner;
             }
 
+            // Name of the hardware already connected over USB/BLE MIDI. The tuner
+            // uses it to pick the matching audio input instead of the system default.
+            connectedDeviceName() {
+                return this.selectedUsbDevice?.name || this.device?.name || this.usbDevicePairs?.[0]?.name || null;
+            }
+
             async openTuner() {
                 const tuner = this.createTuner();
                 if (!tuner) return;
+                tuner.setPreferredDeviceName(this.connectedDeviceName());
                 this.tunerOpen = true;
                 this.tunerBtn?.setAttribute('aria-pressed', 'true');
                 await tuner.open();
