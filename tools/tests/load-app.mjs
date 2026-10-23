@@ -10,6 +10,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 export function loadApp() {
   const app = readFileSync(join(root, 'src', 'app.js'), 'utf8');
+  const tuner = readFileSync(join(root, 'src', 'tuner.js'), 'utf8');
   const modules = JSON.parse(readFileSync(join(root, 'data', 'modules.json'), 'utf8'));
   const commands = JSON.parse(readFileSync(join(root, 'data', 'commands.json'), 'utf8'));
   const document = createDocument();
@@ -40,6 +41,15 @@ export function loadApp() {
   };
   sandbox.globalThis = sandbox;
   const context = vm.createContext(sandbox);
+
+  // The tuner is a separate source file injected before the app by the build.
+  vm.runInContext(tuner, context, { filename: pathToFileURL(join(root, 'src', 'tuner.js')).href });
+  // The file exposes itself on window (for the page) and as a global lexical
+  // binding (for later inline scripts); expose both to the tests.
+  vm.runInContext(
+    'globalThis.__PocketTuner = (typeof PocketTuner !== "undefined") ? PocketTuner : window.PocketTuner;',
+    context,
+  );
   // Expose the lexical class declaration to tests.
   // Use real file URLs so the Node test runner attributes V8 coverage to the sources.
   // (An unnamed script would be exposed as anonymous eval code and never measured.)
@@ -85,5 +95,5 @@ export function loadApp() {
     return editor;
   };
 
-  return { context, sandbox, document, EditorClass, modules, commands, makeEditor, toasts };
+  return { context, sandbox, document, EditorClass, modules, commands, makeEditor, toasts, tuner: context.__PocketTuner };
 }

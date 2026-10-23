@@ -9,7 +9,7 @@
     "check": "node tools/build.mjs --check",
     "test": "node --test \"tools/tests/*.test.mjs\"",
     "coverage": "node tools/coverage.mjs",
-    "coverage:min": "node tools/coverage.mjs 9"
+    "coverage:min": "node tools/coverage.mjs 20"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.2",

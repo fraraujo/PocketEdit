@@ -42,6 +42,8 @@
                 this._reportedSendFailure = false;
                 this._swapSource = null;
                 this.isSwappingPresets = false;
+                this.tuner = null;
+                this.tunerOpen = false;
 
                 // USB MIDI connection properties
                 this.connectionType = null; // 'ble' or 'usb'
@@ -1452,6 +1454,9 @@
                 this.quickExportBtn = document.getElementById('quickExportBtn');
                 this.backupModal = document.getElementById('backupModal');
                 this.backupList = document.getElementById('backupList');
+
+                // Audio tuner
+                this.tunerBtn = document.getElementById('tunerBtn');
                 this.chainScroll = document.getElementById('chainScroll');
                 this.logPanel = document.getElementById('logPanel');
                 this.logToggle = document.getElementById('logToggle');
@@ -1665,6 +1670,68 @@
 
             // Reflects "unsaved changes" in three places: the asterisk next to the preset
             // name (kept for compatibility), a visible badge, and a highlighted Save button.
+            // ---------------------------------------------------------------
+            // AUDIO TUNER
+            // Independent from MIDI/BLE: it only uses the USB audio input, so it
+            // works before connecting and never writes to the pedal.
+            // ---------------------------------------------------------------
+            createTuner() {
+                if (this.tuner) return this.tuner;
+                if (typeof PocketTuner === 'undefined') {
+                    this.showToast('The audio tuner is not available in this build.', 'error');
+                    return null;
+                }
+                const el = (id) => document.getElementById(id);
+                this.tuner = new PocketTuner.TunerController({
+                    env: window,
+                    elements: {
+                        panel: el('tunerPanel'),
+                        backdrop: el('tunerBackdrop'),
+                        closeButton: el('tunerCloseBtn'),
+                        note: el('tunerNote'),
+                        frequency: el('tunerFrequency'),
+                        needle: el('tunerNeedle'),
+                        cents: el('tunerCents'),
+                        verdict: el('tunerVerdict'),
+                        announcer: el('tunerAnnouncer'),
+                        level: el('tunerLevel'),
+                        levelBar: el('tunerLevelBar'),
+                        confidence: el('tunerConfidence'),
+                        confidenceText: el('tunerConfidenceText'),
+                        inputSelect: el('tunerInputSelect'),
+                        a4Input: el('tunerA4'),
+                        status: el('tunerStatus'),
+                    },
+                    onLog: (message) => this.log(message, 'info'),
+                });
+                return this.tuner;
+            }
+
+            async openTuner() {
+                const tuner = this.createTuner();
+                if (!tuner) return;
+                this.tunerOpen = true;
+                this.tunerBtn?.setAttribute('aria-pressed', 'true');
+                await tuner.open();
+            }
+
+            async closeTuner() {
+                this.tunerOpen = false;
+                this.tunerBtn?.setAttribute('aria-pressed', 'false');
+                await this.tuner?.close();
+            }
+
+            toggleTuner() {
+                if (this.tunerOpen) this.closeTuner();
+                else this.openTuner();
+            }
+
+            adjustTunerReference(delta) {
+                const tuner = this.tuner;
+                if (!tuner) return;
+                tuner.setA4(tuner.state.a4 + delta);
+            }
+
             updatePresetModifiedUI(isModified) {
                 const patchNameEl = document.getElementById('patchName');
                 if (patchNameEl) {
@@ -1971,6 +2038,39 @@
                 this.quickSaveBtn?.addEventListener('click', () => this.showSaveModal());
                 this.quickImportBtn?.addEventListener('click', () => this.importPreset());
                 this.quickExportBtn?.addEventListener('click', () => this.exportPreset());
+
+                // Audio tuner
+                this.tunerBtn?.addEventListener('click', () => this.toggleTuner());
+                document.getElementById('tunerCloseBtn')?.addEventListener('click', () => this.closeTuner());
+                document.getElementById('tunerBackdrop')?.addEventListener('click', () => this.closeTuner());
+                document.getElementById('tunerRefreshBtn')?.addEventListener('click', () => this.tuner?.refreshDevices());
+                document.getElementById('tunerInputSelect')?.addEventListener('change', (event) => {
+                    this.tuner?.selectInput(event.target.value);
+                });
+                document.getElementById('tunerA4')?.addEventListener('change', (event) => {
+                    this.tuner?.setA4(event.target.value);
+                });
+                document.getElementById('tunerA4Down')?.addEventListener('click', () => this.adjustTunerReference(-0.5));
+                document.getElementById('tunerA4Up')?.addEventListener('click', () => this.adjustTunerReference(0.5));
+
+                // Keyboard: T toggles the tuner, Esc closes it (before the swap cancel).
+                document.addEventListener('keydown', (event) => {
+                    const active = document.activeElement;
+                    const typing = active && ['INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName);
+                    if (event.key === 'Escape' && this.tunerOpen) {
+                        event.preventDefault();
+                        this.closeTuner();
+                        return;
+                    }
+                    if (typing) return;
+                    if ((event.key === 't' || event.key === 'T') && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                        event.preventDefault();
+                        this.toggleTuner();
+                    }
+                });
+
+                // Never leave the microphone capture running when the page goes away.
+                window.addEventListener('pagehide', () => this.closeTuner());
 
                 // Local preset backups
                 document.getElementById('backupsBtn')?.addEventListener('click', () => this.showBackupsModal());

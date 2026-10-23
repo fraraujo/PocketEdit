@@ -888,6 +888,296 @@
             display: flex;
         }
 
+        /* Audio tuner */
+        .tuner-btn[aria-pressed="true"] {
+            border-color: #ff6b35;
+            color: #ffb08a;
+            background: rgba(255, 107, 53, 0.14);
+        }
+
+        .tuner-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1900;
+        }
+
+        .tuner-backdrop[hidden],
+        .tuner-panel[hidden] {
+            display: none;
+        }
+
+        .tuner-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(420px, 94vw);
+            max-height: 92vh;
+            overflow-y: auto;
+            background: linear-gradient(160deg, #323232, #242424);
+            border: 1px solid #4a4a4a;
+            border-radius: 10px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+            padding: 18px;
+            z-index: 1901;
+            color: #ddd;
+        }
+
+        .tuner-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .tuner-head h2 {
+            font-size: 13px;
+            letter-spacing: 2px;
+            color: #bbb;
+        }
+
+        .tuner-close {
+            background: none;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            color: #bbb;
+            font-size: 15px;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+        }
+
+        .tuner-close:hover { color: #fff; border-color: #555; }
+        .tuner-close:focus-visible { outline: 2px solid #ff6b35; outline-offset: 2px; }
+
+        .tuner-reading {
+            text-align: center;
+            padding: 6px 0 2px;
+        }
+
+        .tuner-note {
+            font-size: 62px;
+            font-weight: 700;
+            line-height: 1;
+            letter-spacing: 1px;
+            color: #e8e8e8;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tuner-note.held { color: #7a7a7a; }
+
+        .tuner-frequency {
+            margin-top: 4px;
+            font-size: 13px;
+            color: #999;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tuner-scale {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 14px 0 4px;
+        }
+
+        .tuner-flat,
+        .tuner-sharp {
+            color: #888;
+            font-size: 14px;
+            width: 12px;
+            text-align: center;
+        }
+
+        .tuner-track {
+            position: relative;
+            flex: 1;
+            height: 26px;
+            border-radius: 13px;
+            background: #1c1c1c;
+            border: 1px solid #444;
+            overflow: hidden;
+        }
+
+        .tuner-zone {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 6%;
+            transform: translateX(-50%);
+            background: rgba(76, 175, 80, 0.25);
+            border-left: 1px solid rgba(76, 175, 80, 0.6);
+            border-right: 1px solid rgba(76, 175, 80, 0.6);
+        }
+
+        .tuner-needle {
+            position: absolute;
+            left: 50%;
+            top: 2px;
+            bottom: 2px;
+            width: 3px;
+            transform: translateX(-50%);
+            border-radius: 2px;
+            background: #ff6b35;
+            box-shadow: 0 0 8px rgba(255, 107, 53, 0.7);
+            transition: transform 0.08s linear;
+        }
+
+        .tuner-panel[data-state="in-tune"] .tuner-needle {
+            background: #4caf50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
+        }
+
+        .tuner-cents {
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            font-variant-numeric: tabular-nums;
+            min-height: 16px;
+        }
+
+        .tuner-verdict {
+            margin: 10px 0 4px;
+            text-align: center;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #bbb;
+            min-height: 20px;
+        }
+
+        .tuner-verdict[data-state="in-tune"] { color: #66d96a; }
+        .tuner-verdict[data-state="ok"] { color: #ffb08a; }
+        .tuner-verdict[data-state="weak"] { color: #e0c15a; }
+        .tuner-verdict[data-state="clipping"] { color: #ff7a7a; }
+        .tuner-verdict[data-state="unstable"] { color: #e0c15a; }
+        .tuner-verdict[data-state="silent"] { color: #777; }
+        .tuner-verdict[data-state="error"] { color: #ff7a7a; }
+
+        .tuner-announcer {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+
+        .tuner-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .tuner-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #999;
+            width: 62px;
+            flex: 0 0 auto;
+        }
+
+        .tuner-select,
+        .tuner-a4 {
+            flex: 1;
+            min-width: 0;
+            padding: 6px 8px;
+            background: #1e1e1e;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #ddd;
+            font-size: 12px;
+        }
+
+        .tuner-a4 { max-width: 90px; }
+        .tuner-unit { font-size: 11px; color: #888; }
+
+        .tuner-mini {
+            flex: 0 0 auto;
+            width: 26px;
+            height: 26px;
+            border-radius: 4px;
+            border: 1px solid #4a4a4a;
+            background: #333;
+            color: #ccc;
+            cursor: pointer;
+            font-size: 13px;
+            line-height: 1;
+        }
+
+        .tuner-mini:hover { background: #3d3d3d; color: #fff; }
+        .tuner-mini:focus-visible { outline: 2px solid #ff6b35; outline-offset: 2px; }
+
+        .tuner-meters {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 14px;
+        }
+
+        .tuner-meter {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tuner-meter-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #999;
+            width: 62px;
+            flex: 0 0 auto;
+        }
+
+        .tuner-meter-value {
+            font-size: 10px;
+            color: #999;
+            width: 34px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tuner-bar {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: #1c1c1c;
+            border: 1px solid #3d3d3d;
+            overflow: hidden;
+        }
+
+        .tuner-bar[data-hot="true"] { border-color: #ff7a7a; }
+
+        .tuner-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: #ff6b35;
+            transition: width 0.1s linear;
+        }
+
+        .tuner-bar[data-hot="true"] .tuner-bar-fill { background: #ff4c4c; }
+
+        .tuner-status {
+            margin: 12px 0 0;
+            font-size: 11px;
+            color: #999;
+            min-height: 14px;
+        }
+
+        .tuner-status[data-state="error"],
+        .tuner-status[data-state="disconnected"] { color: #ff7a7a; }
+
+        .tuner-help {
+            margin: 8px 0 0;
+            font-size: 10px;
+            line-height: 1.4;
+            color: #777;
+        }
+
         /* Local preset backups dialog */
         .backup-hint {
             font-size: 11px;
@@ -1449,6 +1739,11 @@
                             <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg>
                             <span>Export</span>
                         </button>
+                        <button type="button" id="tunerBtn" class="btn top-action tuner-btn"
+                                title="Audio tuner (T) - uses the PocketMaster USB audio input" aria-pressed="false">
+                            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="3"/><circle cx="12" cy="10" r="3"/><circle cx="20" cy="14" r="3"/></svg>
+                            <span>Tuner</span>
+                        </button>
                     </div>
 
                     <div class="global-volume-control">
@@ -1848,6 +2143,62 @@
     </div>
 </div>
 
+<div id="tunerBackdrop" class="tuner-backdrop" hidden></div>
+
+<div id="tunerPanel" class="tuner-panel" role="dialog" aria-modal="true" aria-labelledby="tunerTitle" hidden>
+    <div class="tuner-head">
+        <h2 id="tunerTitle">TUNER</h2>
+        <button type="button" id="tunerCloseBtn" class="tuner-close" aria-label="Close tuner">✕</button>
+    </div>
+
+    <div class="tuner-reading">
+        <div class="tuner-note" id="tunerNote">--</div>
+        <div class="tuner-frequency" id="tunerFrequency">-- Hz</div>
+    </div>
+
+    <div class="tuner-scale">
+        <span class="tuner-flat" aria-hidden="true">♭</span>
+        <div class="tuner-track">
+            <div class="tuner-zone" aria-hidden="true"></div>
+            <div class="tuner-needle" id="tunerNeedle"></div>
+        </div>
+        <span class="tuner-sharp" aria-hidden="true">♯</span>
+    </div>
+    <div class="tuner-cents" id="tunerCents">--</div>
+
+    <div class="tuner-verdict" id="tunerVerdict">Play a string</div>
+    <div class="tuner-announcer" id="tunerAnnouncer" aria-live="polite" aria-atomic="true"></div>
+
+    <div class="tuner-row">
+        <label class="tuner-label" for="tunerInputSelect">Input</label>
+        <select id="tunerInputSelect" class="tuner-select"></select>
+        <button type="button" id="tunerRefreshBtn" class="tuner-mini" title="Refresh audio inputs" aria-label="Refresh audio inputs">↻</button>
+    </div>
+
+    <div class="tuner-row">
+        <label class="tuner-label" for="tunerA4">Reference</label>
+        <input type="number" id="tunerA4" class="tuner-a4" min="430" max="450" step="0.5" value="440">
+        <span class="tuner-unit">Hz</span>
+        <button type="button" id="tunerA4Down" class="tuner-mini" aria-label="Decrease reference pitch">−</button>
+        <button type="button" id="tunerA4Up" class="tuner-mini" aria-label="Increase reference pitch">+</button>
+    </div>
+
+    <div class="tuner-meters">
+        <div class="tuner-meter">
+            <span class="tuner-meter-label">Level</span>
+            <div class="tuner-bar" id="tunerLevelBar"><div class="tuner-bar-fill" id="tunerLevel"></div></div>
+        </div>
+        <div class="tuner-meter">
+            <span class="tuner-meter-label">Confidence</span>
+            <div class="tuner-bar"><div class="tuner-bar-fill" id="tunerConfidence"></div></div>
+            <span class="tuner-meter-value" id="tunerConfidenceText">--</span>
+        </div>
+    </div>
+
+    <p class="tuner-status" id="tunerStatus">Idle</p>
+    <p class="tuner-help">For best accuracy use a clean or drive preset. Pitch shift/octave effects change the reading. No audio leaves the browser.</p>
+</div>
+
 <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
 <div id="lockingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; justify-content: center; align-items: center; text-align: center; color: white; font-size: 1.2em;">
@@ -1884,6 +2235,8 @@
 
     <script>
         window.PocketEditData = /*POCKETEDIT-DATA*/;
+
+    /*POCKETEDIT-TUNER*/
 
     /*POCKETEDIT-APP*/
 

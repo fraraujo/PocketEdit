@@ -14,6 +14,7 @@ and still runs offline with a double-click, with no external requests.
 | --- | --- |
 | `src/template.html` | Markup, CSS and the script shell |
 | `src/app.js` | Application code (UI, BLE/USB transport, protocol) |
+| `src/tuner.js` | Audio tuner: YIN pitch detection, note math, audio capture and panel |
 | `data/modules.json` | Effect/module definitions (names, parameters, ranges) |
 | `data/commands.json` | SysEx command tables |
 | `index.html` | **Generated** - do not edit by hand |
@@ -30,6 +31,27 @@ node --test "tools/tests/*.test.mjs"   # or: npm test
 Tests run the real `src/app.js` in Node with a small DOM stub, so the protocol helpers
 (CRC, name/dB encoding, preset payload, ACK handling, write queue) are covered without
 a browser or a pedal.
+
+### Audio tuner
+
+Click **Tuner** in the top bar (or press `T`) and allow microphone access. The tuner
+uses the processed USB audio from the PocketMaster, works without a MIDI/BLE connection
+and does not modify the preset, the effects or the pedal state.
+
+- Select the input in the panel if the PocketMaster is not picked automatically
+  (the device whose name matches `Pocket` is preferred and remembered by label).
+- Reference A4 is adjustable from 430 to 450 Hz (0.5 Hz steps) and persisted.
+- The reading is smoothed (median + note hysteresis) and reports silence, weak signal,
+  clipping, unstable signal and input disconnection.
+
+Limitations: the USB stream is the **processed** output. Pitch shifters, octavers,
+harmonizers, heavy chorus/detune and a closed noise gate can change or hide the pitch;
+a clean or drive preset gives the best results. A dry/DI signal would require splitting
+the instrument before the pedal and using a separate interface.
+
+Browsers only expose audio inputs on a secure context: `https://` or
+`http://localhost`. If `file://` blocks the microphone in your browser, serve the folder
+with any static server (for example `python3 -m http.server`).
 
 ### Continuous integration
 
@@ -52,7 +74,7 @@ fork cannot open a PR against the upstream repository without a personal access 
 
 ```bash
 npm run coverage          # line coverage of src/*.js + coverage/*.html report
-npm run coverage:min      # same, but exits 1 below the 9% floor
+npm run coverage:min      # same, but exits 1 below the 20% floor
 COVERAGE_FUNCS=waitForAck,writeCommand node tools/coverage.mjs   # focus on functions
 ```
 
@@ -62,7 +84,7 @@ it reports nothing for code loaded that way. The script merges the per-process r
 with OR (a line counts as covered if any test file executed it) and writes
 `coverage/index.html` (annotated source) plus `coverage/coverage.json`.
 
-The floor exists to stop the number from dropping; it is not a target. Most of the UI
+The floor exists to stop the number from dropping; it is not a target. `src/tuner.js` is the best covered file (~92%). Most of the UI
 (`exportPreset`, `handleNotification`, `applyPresetState`, ...) still has no tests, which
 is why the overall number is low.
 
@@ -84,6 +106,7 @@ is why the overall number is low.
 * **Unsaved Preset Warning:** The app tracks your changes and warns you if you try to switch presets without saving your modifications.  
 * **Advanced Debugging Tools:** A hidden log panel contains manual sync buttons and a communication log for troubleshooting.
 * **Tap Tempo:** Use a tap tempo button to calculate milliseconds for delay settings, with 1/8, 1/8 Dotted, 1/4 and 1/2 setting.
+* **Audio Tuner:** A chromatic tuner that listens to the PocketMaster **USB audio** input - no MIDI needed, and it never changes the pedal's preset or effects.
 
 ## **Requirements**
 

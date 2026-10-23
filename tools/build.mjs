@@ -4,6 +4,7 @@
 //                         window.PocketEditData = /*POCKETEDIT-DATA*/;
 //                         /*POCKETEDIT-SHELL*/  (page-level listeners + bootstrap)
 //                         /*POCKETEDIT-APP*/    (the editor itself)
+//   src/tuner.js      - audio tuner (pitch detection, audio capture, panel)
 //   src/app.js        - the editor code (no device data)
 //   src/shell.js      - page-level DOM listeners and the DOMContentLoaded bootstrap
 //   data/*.json       - the device data (source of truth)
@@ -23,6 +24,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
 
 const DATA_MARKER = '/*POCKETEDIT-DATA*/';
+const TUNER_MARKER = '/*POCKETEDIT-TUNER*/';
 const SHELL_MARKER = '/*POCKETEDIT-SHELL*/';
 const APP_MARKER = '/*POCKETEDIT-APP*/';
 
@@ -33,6 +35,7 @@ const commands = JSON.parse(read('data/commands.json'));
 const template = read('src/template.html');
 const app = read('src/app.js');
 const shell = read('src/shell.js');
+const tuner = read('src/tuner.js');
 
 // ---- sanity checks: a broken data file must fail the build loudly ----
 if (!modules.effectLibrary || !Array.isArray(modules.modules)) fail('data/modules.json is missing effectLibrary/modules');
@@ -54,9 +57,10 @@ for (const modId in commands.effectTypes) {
 
 if (!template.includes(DATA_MARKER)) fail(`src/template.html has no ${DATA_MARKER} marker`);
 if (!template.includes(APP_MARKER)) fail(`src/template.html has no ${APP_MARKER} marker`);
+if (!template.includes(TUNER_MARKER)) fail(`src/template.html has no ${TUNER_MARKER} marker`);
 if (!template.includes(SHELL_MARKER)) fail(`src/template.html has no ${SHELL_MARKER} marker`);
-for (const [name, code] of [['src/app.js', app], ['src/shell.js', shell]]) {
-  for (const marker of [DATA_MARKER, APP_MARKER, SHELL_MARKER]) {
+for (const [name, code] of [['src/app.js', app], ['src/shell.js', shell], ['src/tuner.js', tuner]]) {
+  for (const marker of [DATA_MARKER, TUNER_MARKER, APP_MARKER, SHELL_MARKER]) {
     if (code.includes(marker)) fail(`${name} must not contain the ${marker} marker`);
   }
 }
@@ -70,6 +74,7 @@ if (dataJson.includes('</script')) fail('data contains "</script" and would brea
 const indent = (template.slice(0, template.indexOf(DATA_MARKER)).match(/[ \t]*$/) || [''])[0];
 const html = template
   .replace(DATA_MARKER, () => dataJson)
+  .replace(TUNER_MARKER, () => tuner.replace(/\s+$/, ''))
   .replace(SHELL_MARKER, () => shell.replace(/\s+$/, ''))
   .replace(APP_MARKER, () => app);
 
