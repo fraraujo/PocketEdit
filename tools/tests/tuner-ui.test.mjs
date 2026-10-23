@@ -120,6 +120,9 @@ function makeElements() {
     confidenceText: el('tunerConfidenceText'),
     inputSelect: el('tunerInputSelect'),
     a4Input: el('tunerA4'),
+    prevNote: el('tunerPrevNote'),
+    nextNote: el('tunerNextNote'),
+    ticks: el('tunerTicks'),
     status: el('tunerStatus'),
   };
 }
@@ -283,8 +286,12 @@ test('needle follows the cents value on the arc', async () => {
   for (let i = 0; i < buffer.length; i++) buffer[i] = 0.3 * Math.sin(2 * Math.PI * 440 * i / SR);
   for (let i = 0; i < 8; i++) controller._handleSamples(buffer);
   const transform = elements.needle.getAttribute('transform');
-  assert.match(transform, /^rotate\(-?\d+(\.\d+)? 120 100\)$/, transform);
+  assert.match(transform, /^rotate\(-?\d+(\.\d+)? 140 140\)$/, transform);
   const degrees = Number(transform.match(/rotate\((-?[\d.]+)/)[1]);
   assert.ok(Math.abs(degrees) < 12, `in-tune needle stays near centre, got ${degrees}`);
+
+  // Neighbour notes at both ends of the scale (A4 -> G#4 / A#4)
+  assert.equal(elements.prevNote.textContent, '♭ G#4');
+  assert.equal(elements.nextNote.textContent, 'A#4 ♯');
   await controller.close();
 });

@@ -35,6 +35,12 @@ const PocketTuner = (() => {
       return { midi, name, octave, note: `${name}${octave}`, target, cents };
     },
 
+    // Note name for an arbitrary MIDI number (used for the neighbour labels).
+    midiToNoteName(midi) {
+      const value = Math.round(midi);
+      return `${NOTE_NAMES[((value % 12) + 12) % 12]}${Math.floor(value / 12) - 1}`;
+    },
+
     clampA4(value) {
       const numeric = Number(value);
       if (!Number.isFinite(numeric)) return null;
@@ -277,6 +283,7 @@ const PocketTuner = (() => {
       const base = {
         note: null,
         octave: null,
+        midi: null,
         frequency: null,
         cents: 0,
         needleCents: this._needle,
@@ -300,6 +307,7 @@ const PocketTuner = (() => {
             state: 'silent',
             note: this._note.note,
             octave: this._note.octave,
+            midi: this._note.midi,
             frequency: this._note.frequency,
             cents: this._needle,
             held: true,
@@ -362,6 +370,7 @@ const PocketTuner = (() => {
         state,
         note: this._note.note,
         octave: this._note.octave,
+        midi: this._note.midi,
         frequency: median,
         cents,
         needleCents: this._needle,
@@ -428,6 +437,9 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
   // Owns the microphone stream, the Web Audio graph and the panel. DOM nodes are
   // passed in, so this can run (and be tested) outside the browser.
   class TunerController {
+    // Must match the SVG paths in src/template.html.
+    static GAUGE = { cx: 140, cy: 140, radius: 104, halfSpan: 60 };
+
     constructor(options = {}) {
       this.env = options.env || (typeof window !== 'undefined' ? window : globalThis);
       this.elements = options.elements || {};
@@ -471,19 +483,18 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       const NS = 'http://www.w3.org/2000/svg';
       while (group.firstChild) group.removeChild(group.firstChild);
 
-      const cx = 120;
-      const cy = 100;
-      const radius = 86;
+      const geometry = TunerController.GAUGE;
       const point = (degrees, r) => ({
-        x: cx + r * Math.cos((degrees * Math.PI) / 180),
-        y: cy + r * Math.sin((degrees * Math.PI) / 180),
+        x: geometry.cx + r * Math.cos((degrees * Math.PI) / 180),
+        y: geometry.cy + r * Math.sin((degrees * Math.PI) / 180),
       });
 
-      for (let cents = -50; cents <= 50; cents += 10) {
-        const degrees = 270 + (cents / 50) * 60;
+      // 5-cent steps: majors (and labels) land on -50, -25, 0, +25, +50.
+      for (let cents = -50; cents <= 50; cents += 5) {
+        const degrees = 270 + (cents / 50) * geometry.halfSpan;
         const major = cents % 25 === 0;
-        const outer = point(degrees, radius);
-        const inner = point(degrees, radius - (major ? 12 : 6));
+        const outer = point(degrees, geometry.radius);
+        const inner = point(degrees, geometry.radius - (major ? 13 : 7));
 
         const line = doc.createElementNS(NS, 'line');
         line.setAttribute('x1', outer.x.toFixed(2));
@@ -492,6 +503,17 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
         line.setAttribute('y2', inner.y.toFixed(2));
         line.setAttribute('class', cents === 0 ? 'centre' : major ? 'major' : 'minor');
         group.appendChild(line);
+
+        // Every 25 cents gets a numeric label outside the arc.
+        if (major) {
+          const labelPoint = point(degrees, geometry.radius + 16);
+          const text = doc.createElementNS(NS, 'text');
+          text.setAttribute('x', labelPoint.x.toFixed(2));
+          text.setAttribute('y', labelPoint.y.toFixed(2));
+          text.setAttribute('class', cents === 0 ? 'centre' : 'major');
+          text.textContent = cents === 0 ? '0' : cents > 0 ? `+${cents}` : String(cents);
+          group.appendChild(text);
+        }
       }
     }
 
@@ -534,6 +556,11 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
     async open() {
       this._opened = true;
       this._showPanel(true);
+      if (this.env.location?.protocol === 'file:') {
+        this.elements.help && (this.elements.help.textContent =
+          'Running from file://. Browsers often forget the microphone permission after a reload; '
+          + 'serve the folder over http://localhost to stop the prompt. No audio leaves the browser.');
+      }
       this._setStatus('requesting', 'Requesting audio input...');
       try {
         await this.start();
@@ -950,9 +977,9 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       if (e.needle) {
         // The gauge sweeps 120 degrees: +-50 cents maps to +-60 degrees.
         const clamped = Math.max(-50, Math.min(50, model.needleCents || 0));
-        const degrees = clamped * 1.2;
+        const degrees = clamped * (TunerController.GAUGE.halfSpan / 50);
         if (typeof e.needle.setAttribute === 'function') {
-          e.needle.setAttribute('transform', `rotate(${degrees.toFixed(2)} 120 100)`);
+          e.needle.setAttribute('transform', `rotate(${degrees.toFixed(2)} 140 140)`);
         }
       }
       if (e.cents) {
@@ -964,6 +991,17 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       if (e.levelBar) e.levelBar.dataset.hot = model.clipping ? 'true' : 'false';
       if (e.confidence) e.confidence.style.width = `${Math.round((model.confidence || 0) * 100)}%`;
       if (e.confidenceText) e.confidenceText.textContent = `${Math.round((model.confidence || 0) * 100)}%`;
+
+      // The notes one semitone below/above, shown at the ends of the scale.
+      if (e.prevNote || e.nextNote) {
+        if (Number.isFinite(model.midi)) {
+          if (e.prevNote) e.prevNote.textContent = `♭ ${TunerMath.midiToNoteName(model.midi - 1)}`;
+          if (e.nextNote) e.nextNote.textContent = `${TunerMath.midiToNoteName(model.midi + 1)} ♯`;
+        } else {
+          if (e.prevNote) e.prevNote.textContent = '--';
+          if (e.nextNote) e.nextNote.textContent = '--';
+        }
+      }
 
       const stateName = model.state === 'ok' ? 'ok' : model.state;
       const verdict = STATE_TEXT[stateName] || STATE_TEXT.ok;
@@ -994,8 +1032,10 @@ registerProcessor('pocket-tuner', PocketTunerProcessor);
       if (e.frequency) e.frequency.textContent = '-- Hz';
       if (e.cents) e.cents.textContent = '--';
       if (e.needle && typeof e.needle.setAttribute === 'function') {
-        e.needle.setAttribute('transform', 'rotate(0 120 100)');
+        e.needle.setAttribute('transform', 'rotate(0 140 140)');
       }
+      if (e.prevNote) e.prevNote.textContent = '--';
+      if (e.nextNote) e.nextNote.textContent = '--';
       if (e.level) e.level.style.width = '0%';
       if (e.confidence) e.confidence.style.width = '0%';
       if (e.confidenceText) e.confidenceText.textContent = '--';
