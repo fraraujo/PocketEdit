@@ -38,6 +38,7 @@ try {
   const sources = {
     'src/app.js': readFileSync(join(root, 'src', 'app.js'), 'utf8'),
     'src/shell.js': readFileSync(join(root, 'src', 'shell.js'), 'utf8'),
+    'src/tuner.js': readFileSync(join(root, 'src', 'tuner.js'), 'utf8'),
   };
   const coveredBy = {};
   const scriptsBy = {};

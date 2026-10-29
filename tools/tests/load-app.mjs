@@ -10,10 +10,21 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 export function loadApp() {
   const app = readFileSync(join(root, 'src', 'app.js'), 'utf8');
+  const tuner = readFileSync(join(root, 'src', 'tuner.js'), 'utf8');
   const modules = JSON.parse(readFileSync(join(root, 'data', 'modules.json'), 'utf8'));
   const commands = JSON.parse(readFileSync(join(root, 'data', 'commands.json'), 'utf8'));
   const document = createDocument();
   const toasts = [];
+  // Minimal localStorage so the silent backup store can be exercised.
+  const storage = new Map();
+  const localStorage = {
+    getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+    setItem: (k, v) => storage.set(k, String(v)),
+    removeItem: (k) => storage.delete(k),
+    clear: () => storage.clear(),
+    get length() { return storage.size; },
+    key: (i) => [...storage.keys()][i] ?? null,
+  };
   const sandbox = {
     console,
     setTimeout, clearTimeout, setInterval, clearInterval,
@@ -25,9 +36,20 @@ export function loadApp() {
     navigator: {},
     window: { PocketEditData: { modules, commands } },
     showToast: (message, type) => toasts.push({ message, type }),
+    confirm: () => true,
+    localStorage,
   };
   sandbox.globalThis = sandbox;
   const context = vm.createContext(sandbox);
+
+  // The tuner is a separate source file injected before the app by the build.
+  vm.runInContext(tuner, context, { filename: pathToFileURL(join(root, 'src', 'tuner.js')).href });
+  // The file exposes itself on window (for the page) and as a global lexical
+  // binding (for later inline scripts); expose both to the tests.
+  vm.runInContext(
+    'globalThis.__PocketTuner = (typeof PocketTuner !== "undefined") ? PocketTuner : window.PocketTuner;',
+    context,
+  );
   // Expose the lexical class declaration to tests.
   // Use real file URLs so the Node test runner attributes V8 coverage to the sources.
   // (An unnamed script would be exposed as anonymous eval code and never measured.)
@@ -68,8 +90,10 @@ export function loadApp() {
     editor.dumpPackets = [];
     editor.usbMidiBuffer = null;
     editor.usbMultiPacketResponses = {};
+    editor._swapSource = null;
+    editor.isSwappingPresets = false;
     return editor;
   };
 
-  return { context, sandbox, document, EditorClass, modules, commands, makeEditor, toasts };
+  return { context, sandbox, document, EditorClass, modules, commands, makeEditor, toasts, tuner: context.__PocketTuner };
 }

@@ -14,6 +14,7 @@ and still runs offline with a double-click, with no external requests.
 | --- | --- |
 | `src/template.html` | Markup, CSS and the script shell |
 | `src/app.js` | Application code (UI, BLE/USB transport, protocol) |
+| `src/tuner.js` | Audio tuner: YIN pitch detection, note math, audio capture and panel |
 | `data/modules.json` | Effect/module definitions (names, parameters, ranges) |
 | `data/commands.json` | SysEx command tables |
 | `index.html` | **Generated** - do not edit by hand |
@@ -31,6 +32,29 @@ Tests run the real `src/app.js` in Node with a small DOM stub, so the protocol h
 (CRC, name/dB encoding, preset payload, ACK handling, write queue) are covered without
 a browser or a pedal.
 
+### Audio tuner
+
+Click **Tuner** in the top bar (or press `T`) and allow microphone access. The tuner
+uses the processed USB audio from the PocketMaster, works without a MIDI/BLE connection
+and does not modify the preset, the effects or the pedal state.
+
+- The input already connected over USB/BLE MIDI is preferred: the tuner matches its
+  name against the audio inputs (Web MIDI does not expose the audio endpoint, so the
+  name is the only link). Otherwise an input named like the pedal is used, then the
+  device you picked before (remembered by label), then the system default.
+- Reference A4 is adjustable from 430 to 450 Hz (0.5 Hz steps) and persisted.
+- The reading is smoothed (median + note hysteresis) and reports silence, weak signal,
+  clipping, unstable signal and input disconnection.
+
+Limitations: the USB stream is the **processed** output. Pitch shifters, octavers,
+harmonizers, heavy chorus/detune and a closed noise gate can change or hide the pitch;
+a clean or drive preset gives the best results. A dry/DI signal would require splitting
+the instrument before the pedal and using a separate interface.
+
+Browsers only expose audio inputs on a secure context: `https://` or
+`http://localhost`. If `file://` blocks the microphone in your browser, serve the folder
+with any static server (for example `python3 -m http.server`).
+
 ### Continuous integration
 
 `.github/workflows/ci.yml` runs on every push and pull request: it executes the tests,
@@ -41,11 +65,18 @@ a minute.
 > Forks: GitHub disables workflows in forked repositories until you allow them once in
 > **Settings -> Actions -> "I understand my workflows, go ahead and enable them"**.
 
+`.github/workflows/auto-pr.yml` opens a pull request the first time a non-`main` branch is
+pushed, and does nothing on later pushes (pushing to a branch that already has an open PR
+updates that PR). It needs **Settings -> Actions -> General -> Workflow permissions ->
+"Allow GitHub Actions to create and approve pull requests"**; without it the job fails with
+that hint. Note that the default token can only open PRs inside the same repository - a
+fork cannot open a PR against the upstream repository without a personal access token.
+
 ### Code coverage
 
 ```bash
 npm run coverage          # line coverage of src/*.js + coverage/*.html report
-npm run coverage:min      # same, but exits 1 below the 9% floor
+npm run coverage:min      # same, but exits 1 below the 20% floor
 COVERAGE_FUNCS=waitForAck,writeCommand node tools/coverage.mjs   # focus on functions
 ```
 
@@ -55,7 +86,7 @@ it reports nothing for code loaded that way. The script merges the per-process r
 with OR (a line counts as covered if any test file executed it) and writes
 `coverage/index.html` (annotated source) plus `coverage/coverage.json`.
 
-The floor exists to stop the number from dropping; it is not a target. Most of the UI
+The floor exists to stop the number from dropping; it is not a target. `src/tuner.js` is the best covered file (~92%). Most of the UI
 (`exportPreset`, `handleNotification`, `applyPresetState`, ...) still has no tests, which
 is why the overall number is low.
 
@@ -69,6 +100,7 @@ is why the overall number is low.
 * **Dual Connectivity:** Now supports **USB WebMIDI** (default) with a fallback to **Bluetooth**. USB MIDI support allows the editor to work in **Firefox** and other non-Chromium browsers. (thanks to @hnikolov)
 * **Dual Way Communication:** Now displaying changes made on the device (thanks to @hnikolov)
 * **Preset Export in JSON:** Easy way to import/export JSON based presets instead of the proprietary prst files. (thanks to @hnikolov)
+* **In-Page JSON Editor:** Inspect and edit the current preset as JSON directly in the app (no file needed), then apply it back to the editor or send it straight to the device. Import/Export files remain available.
 * **Instant Preset Saving:** Brute-forcing the CRC is gone! Saving now uses a precise **CRC-8 calculation** for instant, reliable preset writing. (thanks to @hnikolov)
 * **Real-Time Editing:** Tweak any parameter and hear the changes instantly on your device.
 * **Full Preset Management:** Easily browse, search, and load all 50 User and 50 Factory presets.  
@@ -77,6 +109,7 @@ is why the overall number is low.
 * **Unsaved Preset Warning:** The app tracks your changes and warns you if you try to switch presets without saving your modifications.  
 * **Advanced Debugging Tools:** A hidden log panel contains manual sync buttons and a communication log for troubleshooting.
 * **Tap Tempo:** Use a tap tempo button to calculate milliseconds for delay settings, with 1/8, 1/8 Dotted, 1/4 and 1/2 setting.
+* **Audio Tuner:** A chromatic tuner that listens to the PocketMaster **USB audio** input - no MIDI needed, and it never changes the pedal's preset or effects.
 
 ## **Requirements**
 
@@ -104,6 +137,7 @@ Getting started with PocketEdit is simple.
 * **Arrange the Signal Chain:** The movable modules (NR, FX1, FX2, DLY, RVB) can be reordered via drag and drop. Simply click and drag a module to a new position in the chain.  
 * **Changing an Effect Type:** Within a module's control panel, use the "Type" or "Model" dropdown menu to switch between different effects (e.g., from a "Scream" overdrive to a "Red Fuzz").  
 * **Saving Your Changes:** When you modify a preset, an asterisk (`*`) will appear next to its name, indicating it's unsaved. To save your changes, click the **⚙️ gear icon** in the top-right to open the Advanced Settings panel, then click the **"Save Current Preset"** button.
+* **Editing the preset JSON in place:** Click **JSON** in the top bar (or **Edit Preset JSON** in the Advanced Settings panel) to see the current preset as the same human-readable JSON used by Export. Edit the module states, effect names, parameters or signal chain, validate the result, then choose **Apply to editor** or **Apply & send** to push it to the pedal. **Reload from editor** regenerates the text from the current controls, and **Load file** / **Download** keep the old file-based workflow available. The preset name in the JSON is metadata only; use **Save** to pick the slot and name on the device.
 
 * ## **Credits**
 

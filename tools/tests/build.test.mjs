@@ -46,6 +46,7 @@ test('built script is valid and declares each top-level symbol once', () => {
     'const CHARACTER_MAP',
     'const MODULES = {',
     'function showToast',
+    'const PocketTuner = (()',
     "addEventListener('DOMContentLoaded'",
     'const MODULE_LIBRARY_DATA',
     'const COMMAND_LIBRARY_DATA',

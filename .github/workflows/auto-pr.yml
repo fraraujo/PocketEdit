@@ -1,0 +1,73 @@
+name: Auto PR
+
+# Opens a pull request the first time a branch is pushed, and leaves it alone on
+# later pushes (a new push to a branch with an open PR already updates that PR).
+# This is intentional: "create a PR on every push" would either fail or spam.
+on:
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: auto-pr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ensure-pr:
+    name: Ensure a PR exists for this branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create the pull request if there is none
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: main
+        run: |
+          set -euo pipefail
+
+          branch="${GITHUB_REF_NAME}"
+
+          if [ "$branch" = "$BASE_BRANCH" ]; then
+            echo "::notice::Skipping: $branch is the base branch."
+            exit 0
+          fi
+
+          # Pull requests are only opened inside this repository. A fork cannot open a
+          # PR against the upstream repository with the default token (that needs a PAT).
+          open_prs="$(gh pr list --head "$branch" --base "$BASE_BRANCH" --state open --json number --jq 'length')"
+          if [ "$open_prs" != "0" ]; then
+            echo "::notice::A pull request is already open for $branch; nothing to do."
+            exit 0
+          fi
+
+          git fetch --no-tags origin "$BASE_BRANCH"
+          commits="$(git rev-list --count "origin/$BASE_BRANCH..HEAD")"
+          if [ "$commits" = "0" ]; then
+            echo "::notice::$branch has no commits ahead of $BASE_BRANCH; no PR created."
+            exit 0
+          fi
+
+          title="$(git log -1 --pretty=%s)"
+          body="$(printf 'Opened automatically because `%s` was pushed.\n\n### Commits\n\n%s\n' \
+            "$branch" "$(git log "origin/$BASE_BRANCH..HEAD" --pretty='- %s (`%h`)')")"
+
+          if ! gh pr create \
+            --head "$branch" \
+            --base "$BASE_BRANCH" \
+            --title "$title" \
+            --body "$body"; then
+            echo "::error::Could not create the pull request."
+            echo "::error::If this is a permissions problem, enable 'Allow GitHub Actions to create and approve pull requests' in Settings -> Actions -> General -> Workflow permissions."
+            exit 1
+          fi
