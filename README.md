@@ -100,6 +100,7 @@ is why the overall number is low.
 * **Dual Connectivity:** Now supports **USB WebMIDI** (default) with a fallback to **Bluetooth**. USB MIDI support allows the editor to work in **Firefox** and other non-Chromium browsers. (thanks to @hnikolov)
 * **Dual Way Communication:** Now displaying changes made on the device (thanks to @hnikolov)
 * **Preset Export in JSON:** Easy way to import/export JSON based presets instead of the proprietary prst files. (thanks to @hnikolov)
+* **In-Page JSON Editor:** Inspect and edit the current preset as JSON directly in the app (no file needed), then apply it back to the editor or send it straight to the device. Import/Export files remain available.
 * **Instant Preset Saving:** Brute-forcing the CRC is gone! Saving now uses a precise **CRC-8 calculation** for instant, reliable preset writing. (thanks to @hnikolov)
 * **Real-Time Editing:** Tweak any parameter and hear the changes instantly on your device.
 * **Full Preset Management:** Easily browse, search, and load all 50 User and 50 Factory presets.  
@@ -136,6 +137,7 @@ Getting started with PocketEdit is simple.
 * **Arrange the Signal Chain:** The movable modules (NR, FX1, FX2, DLY, RVB) can be reordered via drag and drop. Simply click and drag a module to a new position in the chain.  
 * **Changing an Effect Type:** Within a module's control panel, use the "Type" or "Model" dropdown menu to switch between different effects (e.g., from a "Scream" overdrive to a "Red Fuzz").  
 * **Saving Your Changes:** When you modify a preset, an asterisk (`*`) will appear next to its name, indicating it's unsaved. To save your changes, click the **⚙️ gear icon** in the top-right to open the Advanced Settings panel, then click the **"Save Current Preset"** button.
+* **Editing the preset JSON in place:** Click **JSON** in the top bar (or **Edit Preset JSON** in the Advanced Settings panel) to see the current preset as the same human-readable JSON used by Export. Edit the module states, effect names, parameters or signal chain, validate the result, then choose **Apply to editor** or **Apply & send** to push it to the pedal. **Reload from editor** regenerates the text from the current controls, and **Load file** / **Download** keep the old file-based workflow available. The preset name in the JSON is metadata only; use **Save** to pick the slot and name on the device.
 
 * ## **Credits**
 

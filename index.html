@@ -1261,6 +1261,149 @@
             color: #888;
         }
 
+        /* In-page preset JSON editor */
+        .json-editor-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            z-index: 1498;
+        }
+
+        .json-editor-backdrop[hidden] {
+            display: none;
+        }
+
+        .json-editor-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(840px, calc(100vw - 40px));
+            max-height: calc(100vh - 40px);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 18px 20px;
+            background: linear-gradient(145deg, #3a3a3a, #262626);
+            border: 1px solid #4a4a4a;
+            border-radius: 8px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
+            z-index: 1499;
+        }
+
+        .json-editor-modal[hidden] {
+            display: none;
+        }
+
+        .json-editor-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .json-editor-head h4 {
+            color: #ff6b35;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 0;
+        }
+
+        .json-editor-close {
+            background: none;
+            border: none;
+            color: #bbb;
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            padding: 2px 6px;
+        }
+
+        .json-editor-close:hover {
+            color: #fff;
+        }
+
+        .json-editor-hint {
+            margin: 0;
+            font-size: 11px;
+            line-height: 1.5;
+            color: #999;
+        }
+
+        .json-editor-text {
+            width: 100%;
+            flex: 1 1 auto;
+            min-height: 320px;
+            max-height: calc(100vh - 300px);
+            resize: vertical;
+            padding: 10px 12px;
+            background: #1b1b1b;
+            color: #d8e6d8;
+            border: 1px solid #444;
+            border-radius: 5px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            tab-size: 2;
+            white-space: pre;
+            overflow: auto;
+        }
+
+        .json-editor-text:focus {
+            outline: none;
+            border-color: #ff6b35;
+            box-shadow: 0 0 0 1px rgba(255, 107, 53, 0.4);
+        }
+
+        .json-editor-text.invalid {
+            border-color: #ff5c5c;
+        }
+
+        .json-editor-status {
+            min-height: 15px;
+            font-size: 11px;
+            color: #999;
+        }
+
+        .json-editor-status.success { color: #58d68d; }
+        .json-editor-status.warning { color: #e0b44a; }
+        .json-editor-status.error { color: #ff7a7a; }
+
+        .json-editor-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .json-editor-actions .btn {
+            width: auto;
+            margin-bottom: 0;
+            padding: 6px 10px;
+            font-size: 10px;
+        }
+
+        .json-editor-actions .spacer {
+            flex: 1 1 auto;
+        }
+
+        @media (max-width: 640px) {
+            .json-editor-modal {
+                top: 10px;
+                left: 10px;
+                width: calc(100vw - 20px);
+                max-height: calc(100vh - 20px);
+                transform: none;
+                padding: 14px;
+            }
+
+            .json-editor-text {
+                min-height: 180px;
+                max-height: none;
+            }
+        }
+
         /* Non-blocking notifications (replaces window.alert) */
         .toast-container {
             position: fixed;
@@ -1769,6 +1912,11 @@
                             <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg>
                             <span>Export</span>
                         </button>
+                        <button type="button" id="quickJsonBtn" class="btn top-action"
+                                title="View and edit the current preset as JSON, without a file">
+                            <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1"/><path d="M16 3h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-1"/></svg>
+                            <span>JSON</span>
+                        </button>
                         <button type="button" id="tunerBtn" class="btn top-action tuner-btn"
                                 title="Audio tuner (T) - uses the PocketMaster USB audio input" aria-pressed="false">
                             <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><circle cx="4" cy="12" r="3"/><circle cx="12" cy="10" r="3"/><circle cx="20" cy="14" r="3"/></svg>
@@ -2133,6 +2281,7 @@
     </div>
     <button type="button" id="savePresetBtn" class="btn" style="margin-top: 20px;">Save Current Preset</button>
     <button type="button" id="exportPresetBtn" class="btn" style="margin-top: 10px;">Export Preset</button>
+    <button type="button" id="presetJsonBtn" class="btn" style="margin-top: 10px;">Edit Preset JSON</button>
     <button type="button" id="backupsBtn" class="btn" style="margin-top: 10px;">Backups</button>
     <button type="button" id="importPresetBtn" class="btn" style="margin-top: 10px;">Import Preset</button>
     <input type="file" id="presetFileInput" accept=".json" style="display: none;">
@@ -2171,6 +2320,34 @@
         <button type="button" id="cancelSaveBtn" class="btn">Cancel</button>
         <button type="button" id="confirmSaveBtn" class="btn btn-primary">Confirm & Save</button>
     </div>
+</div>
+
+<div id="presetJsonBackdrop" class="json-editor-backdrop" hidden></div>
+
+<div id="presetJsonModal" class="json-editor-modal" role="dialog" aria-modal="true" aria-labelledby="presetJsonTitle" hidden>
+    <div class="json-editor-head">
+        <h4 id="presetJsonTitle">Preset JSON</h4>
+        <button type="button" id="presetJsonCloseBtn" class="json-editor-close" aria-label="Close preset JSON editor">✕</button>
+    </div>
+    <p class="json-editor-hint">
+        This is the same human-readable JSON used by Import/Export, generated from the current editor state.
+        Edit the values for the modules, effects, parameters and signal chain, then apply it back. The preset name
+        here is metadata only - use Save to choose the slot and name on the device.
+    </p>
+    <textarea id="presetJsonText" class="json-editor-text" spellcheck="false" autocomplete="off"
+              autocapitalize="off" aria-label="Preset JSON"></textarea>
+    <div id="presetJsonStatus" class="json-editor-status" role="status" aria-live="polite"></div>
+    <div class="json-editor-actions">
+        <button type="button" id="presetJsonReloadBtn" class="btn" title="Replace the text with the current editor state">Reload from editor</button>
+        <button type="button" id="presetJsonFormatBtn" class="btn" title="Re-indent the JSON">Format</button>
+        <button type="button" id="presetJsonLoadFileBtn" class="btn" title="Load a JSON file into the editor">Load file</button>
+        <button type="button" id="presetJsonDownloadBtn" class="btn" title="Download the JSON as a file">Download</button>
+        <button type="button" id="presetJsonCopyBtn" class="btn" title="Copy the JSON to the clipboard">Copy</button>
+        <span class="spacer"></span>
+        <button type="button" id="presetJsonApplyBtn" class="btn" title="Validate and apply the JSON to the editor">Apply to editor</button>
+        <button type="button" id="presetJsonApplySendBtn" class="btn btn-primary" title="Apply the JSON to the editor and send it to the device">Apply &amp; send</button>
+    </div>
+    <input type="file" id="presetJsonFileInput" accept=".json,application/json" hidden>
 </div>
 
 <div id="tunerBackdrop" class="tuner-backdrop" hidden></div>
@@ -4795,6 +4972,7 @@ if (typeof window !== 'undefined') window.PocketTuner = PocketTuner;
                 this.quickSaveBtn = document.getElementById('quickSaveBtn');
                 this.quickImportBtn = document.getElementById('quickImportBtn');
                 this.quickExportBtn = document.getElementById('quickExportBtn');
+                this.quickJsonBtn = document.getElementById('quickJsonBtn');
                 this.backupModal = document.getElementById('backupModal');
                 this.backupList = document.getElementById('backupList');
 
@@ -4823,6 +5001,13 @@ if (typeof window !== 'undefined') window.PocketTuner = PocketTuner;
                 this.confirmSaveBtn = document.getElementById('confirmSaveBtn');
                 this.cancelSaveBtn = document.getElementById('cancelSaveBtn');
 
+                // In-page preset JSON editor
+                this.presetJsonModal = document.getElementById('presetJsonModal');
+                this.presetJsonBackdrop = document.getElementById('presetJsonBackdrop');
+                this.presetJsonText = document.getElementById('presetJsonText');
+                this.presetJsonStatus = document.getElementById('presetJsonStatus');
+                this.presetJsonFileInput = document.getElementById('presetJsonFileInput');
+
                 // USB MIDI modal elements
                 this.usbMidiModal = document.getElementById('usbMidiModal');
                 this.usbDeviceList = document.getElementById('usbDeviceList');
@@ -4837,7 +5022,7 @@ if (typeof window !== 'undefined') window.PocketTuner = PocketTuner;
                      // Check if the space bar was pressed AND if the user is NOT currently typing
                      // inside an <input> element. This prevents the tap tempo from firing
                      // when the user is searching for patches or entering a manual command.
-                     if (e.code === 'Space' && activeEl.tagName !== 'INPUT') {
+                     if (e.code === 'Space' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) && !activeEl.isContentEditable) {
                          // Prevent the default browser action for the space bar (e.g., scrolling the page).
                          e.preventDefault(); 
 
@@ -5392,6 +5577,34 @@ if (typeof window !== 'undefined') window.PocketTuner = PocketTuner;
                 this.quickSaveBtn?.addEventListener('click', () => this.showSaveModal());
                 this.quickImportBtn?.addEventListener('click', () => this.importPreset());
                 this.quickExportBtn?.addEventListener('click', () => this.exportPreset());
+                this.quickJsonBtn?.addEventListener('click', () => this.openPresetJsonEditor());
+
+                // In-page preset JSON editor
+                document.getElementById('presetJsonBtn')?.addEventListener('click', () => this.openPresetJsonEditor());
+                document.getElementById('presetJsonCloseBtn')?.addEventListener('click', () => this.closePresetJsonEditor());
+                this.presetJsonBackdrop?.addEventListener('click', () => this.closePresetJsonEditor());
+                document.getElementById('presetJsonReloadBtn')?.addEventListener('click', () => this.refreshPresetJsonFromUI());
+                document.getElementById('presetJsonFormatBtn')?.addEventListener('click', () => this.formatPresetJson());
+                document.getElementById('presetJsonLoadFileBtn')?.addEventListener('click', () => this.loadPresetJsonFile());
+                document.getElementById('presetJsonDownloadBtn')?.addEventListener('click', () => this.downloadPresetJsonFromEditor());
+                document.getElementById('presetJsonCopyBtn')?.addEventListener('click', () => this.copyPresetJson());
+                document.getElementById('presetJsonApplyBtn')?.addEventListener('click', () => this.applyPresetJsonFromEditor());
+                document.getElementById('presetJsonApplySendBtn')?.addEventListener('click', () => this.applyPresetJsonFromEditor({ sendToDevice: true }));
+                this.presetJsonFileInput?.addEventListener('change', (event) => this.onPresetJsonFileSelected(event));
+                this.presetJsonText?.addEventListener('input', () => {
+                    this._presetJsonDirty = true;
+                    this.validatePresetJsonInput();
+                });
+                this.presetJsonText?.addEventListener('keydown', (event) => {
+                    // Tab should indent instead of leaving the editor.
+                    if (event.key === 'Tab') {
+                        event.preventDefault();
+                        const start = this.presetJsonText.selectionStart;
+                        const end = this.presetJsonText.selectionEnd;
+                        this.presetJsonText.setRangeText('  ', start, end, 'end');
+                        this._presetJsonDirty = true;
+                    }
+                });
 
                 // Audio tuner
                 this.tunerBtn?.addEventListener('click', () => this.toggleTuner());
@@ -5425,6 +5638,14 @@ if (typeof window !== 'undefined') window.PocketTuner = PocketTuner;
 
                 // Never leave the microphone capture running when the page goes away.
                 window.addEventListener('pagehide', () => this.closeTuner());
+
+                // Esc closes the in-page JSON editor (the textarea keeps its content).
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape' && this.isPresetJsonEditorOpen()) {
+                        event.preventDefault();
+                        this.closePresetJsonEditor();
+                    }
+                });
 
                 // Local preset backups
                 document.getElementById('backupsBtn')?.addEventListener('click', () => this.showBackupsModal());
@@ -6620,11 +6841,223 @@ if (typeof window !== 'undefined') window.PocketTuner = PocketTuner;
             }
 
             // ============================================================================
-            // EXPORT PRESET: Convert current UI state to human-readable JSON
+            // IN-PAGE PRESET JSON EDITOR
+            // See the current preset as JSON, edit it and apply it back to the
+            // editor (and optionally straight to the device) without a file.
             // ============================================================================
-            async exportPreset() {
-                this.log('Exporting preset...', 'info');
+            isPresetJsonEditorOpen() {
+                return Boolean(this.presetJsonModal && !this.presetJsonModal.hidden);
+            }
 
+            openPresetJsonEditor() {
+                if (!this.presetJsonModal) return;
+                this.advancedSettingsPanel?.classList.remove('visible');
+                this.advancedSettingsBtn?.setAttribute('aria-expanded', 'false');
+                this._presetJsonDirty = false;
+                this.refreshPresetJsonFromUI();
+                this.presetJsonModal.hidden = false;
+                if (this.presetJsonBackdrop) this.presetJsonBackdrop.hidden = false;
+                this.presetJsonText?.focus();
+            }
+
+            closePresetJsonEditor(force = false) {
+                if (!this.presetJsonModal) return;
+                if (!force && this._presetJsonDirty
+                    && typeof confirm === 'function'
+                    && !confirm('Discard the unsaved changes in the JSON editor?')) return;
+                this.presetJsonModal.hidden = true;
+                if (this.presetJsonBackdrop) this.presetJsonBackdrop.hidden = true;
+                this._presetJsonDirty = false;
+            }
+
+            setPresetJsonStatus(message, type = 'info') {
+                if (!this.presetJsonStatus) return;
+                this.presetJsonStatus.textContent = message;
+                this.presetJsonStatus.className = `json-editor-status ${type}`;
+            }
+
+            // Fills the textarea with the current state of the editor controls.
+            refreshPresetJsonFromUI() {
+                if (!this.presetJsonText) return;
+                if (this._presetJsonDirty && this.presetJsonText.value.trim()
+                    && typeof confirm === 'function'
+                    && !confirm('Reload the current preset and discard the JSON changes?')) return;
+                try {
+                    const presetData = this.buildPresetDataFromUI();
+                    this.presetJsonText.value = JSON.stringify(presetData, null, 2);
+                    this.presetJsonText.classList.remove('invalid');
+                    this._presetJsonDirty = false;
+                    this.setPresetJsonStatus('Loaded the current editor state. Edit the JSON, then apply it back.', 'info');
+                } catch (error) {
+                    this.setPresetJsonStatus(`Could not read the current preset: ${error.message}`, 'error');
+                }
+            }
+
+            // Turns JSON.parse's byte position into a line/column hint.
+            describeJsonError(text, error) {
+                const message = error?.message || String(error);
+                const match = /position\s+(\d+)/i.exec(message);
+                if (!match) return message;
+                const pos = Math.min(parseInt(match[1], 10), text.length);
+                const before = text.slice(0, pos);
+                const line = before.split('\n').length;
+                const column = pos - before.lastIndexOf('\n');
+                return `${message.replace(/\s*at position\s+\d+.*$/i, '')} (line ${line}, column ${column})`;
+            }
+
+            parsePresetJsonText(text) {
+                let jsonData;
+                try {
+                    jsonData = JSON.parse(text);
+                } catch (error) {
+                    throw new Error(`Invalid JSON: ${this.describeJsonError(text, error)}`);
+                }
+                if (!jsonData || typeof jsonData !== 'object' || Array.isArray(jsonData)) {
+                    throw new Error('Preset JSON must be an object.');
+                }
+                if (!jsonData.modules || typeof jsonData.modules !== 'object' || Array.isArray(jsonData.modules)) {
+                    throw new Error('Preset JSON is missing the "modules" object.');
+                }
+                return jsonData;
+            }
+
+            validatePresetJsonInput() {
+                if (!this.presetJsonText) return false;
+                const text = this.presetJsonText.value;
+                if (!text.trim()) {
+                    this.presetJsonText.classList.remove('invalid');
+                    this.setPresetJsonStatus('Paste a preset JSON or press "Reload from editor".', 'warning');
+                    return false;
+                }
+                try {
+                    this.parsePresetJsonText(text);
+                    this.presetJsonText.classList.remove('invalid');
+                    this.setPresetJsonStatus(`Valid JSON (${text.split('\n').length} lines).`, 'success');
+                    return true;
+                } catch (error) {
+                    this.presetJsonText.classList.add('invalid');
+                    this.setPresetJsonStatus(error.message, 'error');
+                    return false;
+                }
+            }
+
+            formatPresetJson() {
+                if (!this.presetJsonText) return;
+                try {
+                    const jsonData = this.parsePresetJsonText(this.presetJsonText.value);
+                    this.presetJsonText.value = JSON.stringify(jsonData, null, 2);
+                    this.presetJsonText.classList.remove('invalid');
+                    this._presetJsonDirty = true;
+                    this.setPresetJsonStatus('Formatted.', 'success');
+                } catch (error) {
+                    this.presetJsonText.classList.add('invalid');
+                    this.setPresetJsonStatus(error.message, 'error');
+                }
+            }
+
+            async copyPresetJson() {
+                if (!this.presetJsonText) return;
+                const text = this.presetJsonText.value;
+                try {
+                    if (navigator.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(text);
+                    } else {
+                        this.presetJsonText.select();
+                        document.execCommand('copy');
+                    }
+                    this.setPresetJsonStatus('JSON copied to the clipboard.', 'success');
+                } catch (error) {
+                    this.setPresetJsonStatus(`Could not copy: ${error.message}`, 'error');
+                }
+            }
+
+            downloadPresetJsonFromEditor() {
+                if (!this.presetJsonText) return;
+                try {
+                    const jsonData = this.parsePresetJsonText(this.presetJsonText.value);
+                    const name = String(jsonData.presetName || 'preset').replace(/[^\w.-]+/g, '_');
+                    this.downloadJson(jsonData, `${name}_${Date.now()}.json`);
+                    this.setPresetJsonStatus('Preset downloaded as a JSON file.', 'success');
+                } catch (error) {
+                    this.presetJsonText.classList.add('invalid');
+                    this.setPresetJsonStatus(error.message, 'error');
+                }
+            }
+
+            loadPresetJsonFile() {
+                this.presetJsonFileInput?.click();
+            }
+
+            onPresetJsonFileSelected(event) {
+                const file = event.target.files?.[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    if (!this.presetJsonText) return;
+                    this.presetJsonText.value = String(e.target.result ?? '');
+                    this._presetJsonDirty = true;
+                    this.validatePresetJsonInput();
+                };
+                reader.onerror = () => {
+                    this.setPresetJsonStatus('Could not read the selected file.', 'error');
+                };
+                reader.readAsText(file);
+                event.target.value = '';
+            }
+
+            // Converts the textarea back to the internal preset shape and applies it.
+            // With sendToDevice the complete state is also pushed to the pedal.
+            async applyPresetJsonFromEditor({ sendToDevice = false } = {}) {
+                if (!this.presetJsonText) return false;
+
+                let fullPresetData;
+                try {
+                    const jsonData = this.parsePresetJsonText(this.presetJsonText.value);
+                    fullPresetData = this.convertHumanReadableToFullPresetData(jsonData);
+                } catch (error) {
+                    this.presetJsonText.classList.add('invalid');
+                    this.setPresetJsonStatus(error.message, 'error');
+                    this.showToast(`Invalid preset JSON: ${error.message}`, 'error', 8000);
+                    return false;
+                }
+
+                try {
+                    this.applyPresetState(fullPresetData);
+                    this.presetJsonText.classList.remove('invalid');
+                    this._presetJsonDirty = false;
+
+                    // Applying a JSON preset changes the editor state: let the normal
+                    // Save flow persist it to a slot.
+                    this.isPresetModified = true;
+                    this.updatePresetModifiedUI(true);
+
+                    if (sendToDevice) {
+                        if (!this.isConnected) {
+                            this.setPresetJsonStatus('Applied to the editor, but the device is not connected.', 'warning');
+                            this.showToast('JSON applied to the editor. Connect to the device to send it.', 'warning', 6000);
+                            return true;
+                        }
+                        this.setPresetJsonStatus('Applying to the editor and sending to the device...', 'info');
+                        await this.syncPresetStateToDevice(fullPresetData);
+                        this.setPresetJsonStatus('Applied and sent to the device. Use Save to store it in a preset slot.', 'success');
+                        this.showToast('Preset JSON applied and sent to the device.', 'success');
+                    } else {
+                        this.setPresetJsonStatus('Applied to the editor. Use Save to store it in a preset slot.', 'success');
+                        this.showToast('Preset JSON applied to the editor.', 'success');
+                    }
+                    return true;
+                } catch (error) {
+                    this.setPresetJsonStatus(`Could not apply the preset: ${error.message}`, 'error');
+                    this.showToast(`Failed to apply the preset JSON: ${error.message}`, 'error', 8000);
+                    return false;
+                }
+            }
+
+            // ============================================================================
+            // PRESET JSON: current UI state in the human-readable format
+            // ============================================================================
+            buildPresetDataFromUI() {
                 try {
                     // Gather current state from UI
                     const ampModeToggle = document.getElementById('amp-clone-mode');
@@ -6764,9 +7197,25 @@ if (typeof window !== 'undefined') window.PocketTuner = PocketTuner;
                         }
                     };
 
+                    return presetData;
+                } catch (error) {
+                    this.log(`❌ Could not read the current preset: ${error.message}`, 'error');
+                    throw error;
+                }
+            }
+
+            // ============================================================================
+            // EXPORT PRESET: Download the current UI state as a JSON file
+            // ============================================================================
+            async exportPreset() {
+                this.log('Exporting preset...', 'info');
+
+                try {
+                    const presetData = this.buildPresetDataFromUI();
+
                     // Download as JSON file
                     const jsonString = JSON.stringify(presetData, null, 2);
-                    const defaultFileName = `${presetName.replace(/\s+/g, '_')}_${Date.now()}.json`;
+                    const defaultFileName = `${presetData.presetName.replace(/\s+/g, '_')}_${Date.now()}.json`;
 
                     // Use File System Access API if available (lets us know the actual chosen name)
                     if (window.showSaveFilePicker) {
