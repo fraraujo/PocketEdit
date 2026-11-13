@@ -40,6 +40,10 @@
                 this._writeQueue = Promise.resolve();
                 this.lastSendFailed = false;
                 this._reportedSendFailure = false;
+                this._swapSource = null;
+                this.isSwappingPresets = false;
+                this.tuner = null;
+                this.tunerOpen = false;
 
                 // USB MIDI connection properties
                 this.connectionType = null; // 'ble' or 'usb'
@@ -1440,6 +1444,21 @@
                 this.syncModulesBtn = document.getElementById('syncModulesBtn');
                 this.statusDot = document.getElementById('statusDot');
                 this.statusText = document.getElementById('statusText');
+                this.syncState = document.getElementById('syncState');
+                this.syncStateText = document.getElementById('syncStateText');
+                this.topStatus = document.getElementById('topStatus');
+                this.topStatusText = document.getElementById('topStatusText');
+                this.unsavedBadge = document.getElementById('unsavedBadge');
+                this.quickSaveBtn = document.getElementById('quickSaveBtn');
+                this.quickImportBtn = document.getElementById('quickImportBtn');
+                this.quickExportBtn = document.getElementById('quickExportBtn');
+                this.quickJsonBtn = document.getElementById('quickJsonBtn');
+                this.backupModal = document.getElementById('backupModal');
+                this.backupList = document.getElementById('backupList');
+
+                // Audio tuner
+                this.tunerBtn = document.getElementById('tunerBtn');
+                this.chainScroll = document.getElementById('chainScroll');
                 this.logPanel = document.getElementById('logPanel');
                 this.logToggle = document.getElementById('logToggle');
                 this.logContent = document.getElementById('logContent');
@@ -1462,6 +1481,13 @@
                 this.confirmSaveBtn = document.getElementById('confirmSaveBtn');
                 this.cancelSaveBtn = document.getElementById('cancelSaveBtn');
 
+                // In-page preset JSON editor
+                this.presetJsonModal = document.getElementById('presetJsonModal');
+                this.presetJsonBackdrop = document.getElementById('presetJsonBackdrop');
+                this.presetJsonText = document.getElementById('presetJsonText');
+                this.presetJsonStatus = document.getElementById('presetJsonStatus');
+                this.presetJsonFileInput = document.getElementById('presetJsonFileInput');
+
                 // USB MIDI modal elements
                 this.usbMidiModal = document.getElementById('usbMidiModal');
                 this.usbDeviceList = document.getElementById('usbDeviceList');
@@ -1476,7 +1502,7 @@
                      // Check if the space bar was pressed AND if the user is NOT currently typing
                      // inside an <input> element. This prevents the tap tempo from firing
                      // when the user is searching for patches or entering a manual command.
-                     if (e.code === 'Space' && activeEl.tagName !== 'INPUT') {
+                     if (e.code === 'Space' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) && !activeEl.isContentEditable) {
                          // Prevent the default browser action for the space bar (e.g., scrolling the page).
                          e.preventDefault(); 
 
@@ -1577,16 +1603,70 @@
                 const item = document.createElement('div');
                 item.className = 'patch-item';
 
-                item.textContent = patchData.displayText;
+                const label = document.createElement('span');
+                label.className = 'patch-item-label';
+                label.textContent = patchData.displayText;
+                item.appendChild(label);
+
                 item.title = patchData.displayText;
                 item.dataset.code = patchData.command;
                 item.dataset.baseName = patchData.baseName;
 
+                // Only user presets can be reordered (factory slots are read-only).
+                if (this.activePatchTab === 'user') {
+                    item.classList.add('swappable');
+                    const swapBtn = document.createElement('button');
+                    swapBtn.type = 'button';
+                    swapBtn.className = 'patch-swap';
+                    swapBtn.textContent = '⇄';
+                    swapBtn.title = `Swap ${patchData.baseName} with another user preset`;
+                    swapBtn.setAttribute('aria-label', `Swap ${patchData.baseName} with another user preset`);
+                    swapBtn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        this.beginPresetSwap(patchData.baseName);
+                    });
+                    item.appendChild(swapBtn);
+                }
+
+                if (this._swapSource === patchData.baseName) item.classList.add('swap-source');
+
                 item.addEventListener('click', () => {
+                    if (this._swapSource) {
+                        // A swap is armed: this click chooses the other slot.
+                        const source = this._swapSource;
+                        this._swapSource = null;
+                        this.renderPatchList();
+                        const from = parseInt(source.slice(1), 10) - 1;
+                        const to = parseInt(patchData.baseName.slice(1), 10) - 1;
+                        this.swapUserPresets(from, to);
+                        return;
+                    }
                     this.updatePatchInfo(item, true);
                 });
 
                 this.patchListContainer.appendChild(item);
+            }
+
+            beginPresetSwap(baseName) {
+                if (!this.isConnected) {
+                    this.showToast('Connect to the device before swapping presets.', 'warning');
+                    return;
+                }
+                if (this._swapSource === baseName) {
+                    this._swapSource = null;
+                    this.showToast('Swap cancelled.', 'info');
+                } else {
+                    this._swapSource = baseName;
+                    this.showToast(`Select the preset to swap with ${baseName}, or press Esc to cancel.`, 'info', 6000);
+                }
+                this.renderPatchList();
+            }
+
+            cancelPresetSwap() {
+                if (!this._swapSource) return;
+                this._swapSource = null;
+                this.renderPatchList();
+                this.showToast('Swap cancelled.', 'info');
             }
 
             // Keeps the ARIA state of toggle switches/status indicators in sync with
@@ -1596,17 +1676,113 @@
                 el.setAttribute('aria-checked', String(el.classList.contains('on')));
             }
 
+            // Reflects "unsaved changes" in three places: the asterisk next to the preset
+            // name (kept for compatibility), a visible badge, and a highlighted Save button.
+            // ---------------------------------------------------------------
+            // AUDIO TUNER
+            // Independent from MIDI/BLE: it only uses the USB audio input, so it
+            // works before connecting and never writes to the pedal.
+            // ---------------------------------------------------------------
+            createTuner() {
+                if (this.tuner) return this.tuner;
+                if (typeof PocketTuner === 'undefined') {
+                    this.showToast('The audio tuner is not available in this build.', 'error');
+                    return null;
+                }
+                const el = (id) => document.getElementById(id);
+                this.tuner = new PocketTuner.TunerController({
+                    env: window,
+                    elements: {
+                        panel: el('tunerPanel'),
+                        backdrop: el('tunerBackdrop'),
+                        closeButton: el('tunerCloseBtn'),
+                        note: el('tunerNote'),
+                        frequency: el('tunerFrequency'),
+                        needle: el('tunerNeedle'),
+                        ticks: el('tunerTicks'),
+                        prevNote: el('tunerPrevNote'),
+                        nextNote: el('tunerNextNote'),
+                        help: document.querySelector('.tuner-help'),
+                        cents: el('tunerCents'),
+                        verdict: el('tunerVerdict'),
+                        announcer: el('tunerAnnouncer'),
+                        level: el('tunerLevel'),
+                        levelBar: el('tunerLevelBar'),
+                        confidence: el('tunerConfidence'),
+                        confidenceText: el('tunerConfidenceText'),
+                        inputSelect: el('tunerInputSelect'),
+                        a4Input: el('tunerA4'),
+                        status: el('tunerStatus'),
+                    },
+                    onLog: (message) => this.log(message, 'info'),
+                });
+                return this.tuner;
+            }
+
+            // Name of the hardware already connected over USB/BLE MIDI. The tuner
+            // uses it to pick the matching audio input instead of the system default.
+            connectedDeviceName() {
+                return this.selectedUsbDevice?.name || this.device?.name || this.usbDevicePairs?.[0]?.name || null;
+            }
+
+            async openTuner() {
+                const tuner = this.createTuner();
+                if (!tuner) return;
+                tuner.setPreferredDeviceName(this.connectedDeviceName());
+                this.tunerOpen = true;
+                this.tunerBtn?.setAttribute('aria-pressed', 'true');
+                await tuner.open();
+            }
+
+            async closeTuner() {
+                this.tunerOpen = false;
+                this.tunerBtn?.setAttribute('aria-pressed', 'false');
+                await this.tuner?.close();
+            }
+
+            toggleTuner() {
+                if (this.tunerOpen) this.closeTuner();
+                else this.openTuner();
+            }
+
+            adjustTunerReference(delta) {
+                const tuner = this.tuner;
+                if (!tuner) return;
+                tuner.setA4(tuner.state.a4 + delta);
+            }
+
             updatePresetModifiedUI(isModified) {
                 const patchNameEl = document.getElementById('patchName');
-                if (!patchNameEl) return;
-
-                let currentName = patchNameEl.textContent;
-
-                if (isModified && !currentName.endsWith('*')) {
-                    patchNameEl.textContent = currentName + '*';
-                } else if (!isModified && currentName.endsWith('*')) {
-                    patchNameEl.textContent = currentName.slice(0, -1);
+                if (patchNameEl) {
+                    const currentName = patchNameEl.textContent;
+                    if (isModified && !currentName.endsWith('*')) {
+                        patchNameEl.textContent = currentName + '*';
+                    } else if (!isModified && currentName.endsWith('*')) {
+                        patchNameEl.textContent = currentName.slice(0, -1);
+                    }
+                    patchNameEl.classList.toggle('modified', isModified);
                 }
+
+                if (this.unsavedBadge) this.unsavedBadge.hidden = !isModified;
+
+                const saveButtons = [this.quickSaveBtn, this.savePresetBtn];
+                for (const btn of saveButtons) {
+                    if (!btn) continue;
+                    btn.classList.toggle('pending', isModified);
+                    btn.setAttribute('aria-label', isModified ? 'Save preset (unsaved changes)' : 'Save preset');
+                }
+
+                document.title = isModified ? 'Pocket Edit *' : 'Pocket Edit';
+            }
+
+            // Warn before closing the tab with unsaved edits.
+            installUnloadGuard() {
+                window.addEventListener('beforeunload', (event) => {
+                    if (!this.isPresetModified) return;
+                    event.preventDefault();
+                    event.returnValue = ''; // required by some browsers
+                    return '';
+                });
             }
 
 
@@ -1702,6 +1878,7 @@
 
                     if (moduleElement) {
                         moduleElement.querySelector('.module-name').textContent = moduleDef.name;
+                        this.ensureModulePowerControl(moduleElement, moduleId);
                     }
                     if (controlPanel) {
                         controlPanel.querySelector('.module-title').textContent = moduleDef.name;
@@ -1847,10 +2024,9 @@
                 });
                 this.moduleElements.forEach(module => {
                     module.addEventListener('click', event => {
-                        if (event.target.closest('.module-status')) {
-                            // Click was on the status indicator, so we ignore it here and let the status click handler manage it.
-                            return;
-                        }
+                        // The power pill and the status dot are activation controls, not
+                        // selection: clicking them must not change which module is edited.
+                        if (event.target.closest('.module-power, .module-status')) return;
                         this.selectModule(parseInt(module.dataset.moduleId, 10));
                     });
                 });
@@ -1872,10 +2048,104 @@
                 this.cancelSaveBtn.addEventListener('click', () => this.hideSaveModal());
                 this.confirmSaveBtn.addEventListener('click', () => this.saveCurrentPreset());
 
-                // Export/Import preset buttons
+                // Export/Import preset buttons (advanced panel)
                 document.getElementById('exportPresetBtn').addEventListener('click', () => this.exportPreset());
                 document.getElementById('importPresetBtn').addEventListener('click', () => this.importPreset());
                 document.getElementById('presetFileInput').addEventListener('change', (e) => this.onPresetFileSelected(e));
+
+                // Always-visible actions in the top bar
+                this.quickSaveBtn?.addEventListener('click', () => this.showSaveModal());
+                this.quickImportBtn?.addEventListener('click', () => this.importPreset());
+                this.quickExportBtn?.addEventListener('click', () => this.exportPreset());
+                this.quickJsonBtn?.addEventListener('click', () => this.openPresetJsonEditor());
+
+                // In-page preset JSON editor
+                document.getElementById('presetJsonBtn')?.addEventListener('click', () => this.openPresetJsonEditor());
+                document.getElementById('presetJsonCloseBtn')?.addEventListener('click', () => this.closePresetJsonEditor());
+                this.presetJsonBackdrop?.addEventListener('click', () => this.closePresetJsonEditor());
+                document.getElementById('presetJsonReloadBtn')?.addEventListener('click', () => this.refreshPresetJsonFromUI());
+                document.getElementById('presetJsonFormatBtn')?.addEventListener('click', () => this.formatPresetJson());
+                document.getElementById('presetJsonLoadFileBtn')?.addEventListener('click', () => this.loadPresetJsonFile());
+                document.getElementById('presetJsonDownloadBtn')?.addEventListener('click', () => this.downloadPresetJsonFromEditor());
+                document.getElementById('presetJsonCopyBtn')?.addEventListener('click', () => this.copyPresetJson());
+                document.getElementById('presetJsonApplyBtn')?.addEventListener('click', () => this.applyPresetJsonFromEditor());
+                document.getElementById('presetJsonApplySendBtn')?.addEventListener('click', () => this.applyPresetJsonFromEditor({ sendToDevice: true }));
+                this.presetJsonFileInput?.addEventListener('change', (event) => this.onPresetJsonFileSelected(event));
+                this.presetJsonText?.addEventListener('input', () => {
+                    this._presetJsonDirty = true;
+                    this.validatePresetJsonInput();
+                });
+                this.presetJsonText?.addEventListener('keydown', (event) => {
+                    // Tab should indent instead of leaving the editor.
+                    if (event.key === 'Tab') {
+                        event.preventDefault();
+                        const start = this.presetJsonText.selectionStart;
+                        const end = this.presetJsonText.selectionEnd;
+                        this.presetJsonText.setRangeText('  ', start, end, 'end');
+                        this._presetJsonDirty = true;
+                    }
+                });
+
+                // Audio tuner
+                this.tunerBtn?.addEventListener('click', () => this.toggleTuner());
+                document.getElementById('tunerCloseBtn')?.addEventListener('click', () => this.closeTuner());
+                document.getElementById('tunerBackdrop')?.addEventListener('click', () => this.closeTuner());
+                document.getElementById('tunerRefreshBtn')?.addEventListener('click', () => this.tuner?.refreshDevices());
+                document.getElementById('tunerInputSelect')?.addEventListener('change', (event) => {
+                    this.tuner?.selectInput(event.target.value);
+                });
+                document.getElementById('tunerA4')?.addEventListener('change', (event) => {
+                    this.tuner?.setA4(event.target.value);
+                });
+                document.getElementById('tunerA4Down')?.addEventListener('click', () => this.adjustTunerReference(-0.5));
+                document.getElementById('tunerA4Up')?.addEventListener('click', () => this.adjustTunerReference(0.5));
+
+                // Keyboard: T toggles the tuner, Esc closes it (before the swap cancel).
+                document.addEventListener('keydown', (event) => {
+                    const active = document.activeElement;
+                    const typing = active && ['INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName);
+                    if (event.key === 'Escape' && this.tunerOpen) {
+                        event.preventDefault();
+                        this.closeTuner();
+                        return;
+                    }
+                    if (typing) return;
+                    if ((event.key === 't' || event.key === 'T') && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                        event.preventDefault();
+                        this.toggleTuner();
+                    }
+                });
+
+                // Never leave the microphone capture running when the page goes away.
+                window.addEventListener('pagehide', () => this.closeTuner());
+
+                // Esc closes the in-page JSON editor (the textarea keeps its content).
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape' && this.isPresetJsonEditorOpen()) {
+                        event.preventDefault();
+                        this.closePresetJsonEditor();
+                    }
+                });
+
+                // Local preset backups
+                document.getElementById('backupsBtn')?.addEventListener('click', () => this.showBackupsModal());
+                document.getElementById('closeBackupsBtn')?.addEventListener('click', () => this.hideBackupsModal());
+                document.getElementById('clearBackupsBtn')?.addEventListener('click', () => this.clearBackups());
+
+                // Esc cancels an armed preset swap.
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape' && this._swapSource) this.cancelPresetSwap();
+                });
+
+                // Ctrl/Cmd+S saves, like in most editors.
+                document.addEventListener('keydown', (event) => {
+                    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+                        event.preventDefault();
+                        this.showSaveModal();
+                    }
+                });
+
+                this.installUnloadGuard();
 
                 // USB MIDI modal event listeners
                 this.confirmUsbBtn.addEventListener('click', () => this.confirmUsbDeviceSelection());
@@ -2284,7 +2554,14 @@
                 if (this.activeModuleId === moduleId) return;
                 this.activeModuleId = moduleId;
                 this.moduleElements.forEach(m => {
-                    m.classList.toggle('active', parseInt(m.dataset.moduleId, 10) === moduleId);
+                    const isActive = parseInt(m.dataset.moduleId, 10) === moduleId;
+                    m.classList.toggle('active', isActive);
+                    m.setAttribute('aria-selected', String(isActive));
+                    if (isActive) {
+                        // Keep the edited module visible inside the horizontal strip without
+                        // scrolling the page vertically.
+                        m.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
+                    }
                 });
                 this.effectControls.forEach(c => {
                     c.classList.toggle('active', c.id === `module-controls-${moduleId}`);
@@ -2303,15 +2580,92 @@
                 this.log('UI Unlocked: Sync complete.', 'info');
             }
 
+            // Adds the explicit ON/OFF control to a module tile. Clicking the tile selects
+            // the module for editing; this pill is the only thing that switches it on/off.
+            getModulePowerControl(moduleElement) {
+                if (!moduleElement) return null;
+                // Only classList is used here: for SVG elements className is an
+                // SVGAnimatedString, so string operations on it throw.
+                return moduleElement.querySelector?.('.module-power')
+                    || Array.from(moduleElement.children || []).find((child) => child.classList?.contains('module-power'))
+                    || null;
+            }
+
+            ensureModulePowerControl(moduleElement, moduleId) {
+                if (this.getModulePowerControl(moduleElement)) return;
+
+                const pill = document.createElement('button');
+                pill.type = 'button';
+                pill.classList.add('module-power');
+                pill.dataset.moduleId = String(moduleId);
+                pill.setAttribute('aria-pressed', 'false');
+                pill.setAttribute('aria-label', `Enable or disable module ${moduleId}`);
+                pill.textContent = 'OFF';
+                // Keep the tile from being selected/dragged by the activation control.
+                pill.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.toggleModulePower(moduleId);
+                });
+                pill.addEventListener('pointerdown', (event) => event.stopPropagation());
+                moduleElement.appendChild(pill);
+            }
+
+            toggleModulePower(moduleId) {
+                const enableToggle = document.getElementById(`module-enable-${moduleId}`);
+                if (!enableToggle || enableToggle.classList.contains('locked')) return;
+                enableToggle.classList.toggle('on');
+                this._syncToggleAria(enableToggle);
+                this.updateModuleStatus(moduleId);
+                this.sendModuleState(moduleId, enableToggle.classList.contains('on'));
+            }
+
+            // Hides the connector that has no module after it. Without this, the chain
+            // ends with an arrow pointing at nothing (it was only recalculated after a
+            // drag/drop or a device update, never on load).
+            refreshChainConnectors() {
+                const container = document.querySelector('.chain-flow');
+                if (!container?.querySelectorAll) return;
+                container.querySelectorAll('.chain-connector').forEach((connector) => {
+                    const next = connector.nextElementSibling;
+                    const followedByModule = Boolean(next
+                        && (next.classList.contains('chain-module') || next.id === 'fixed-chain-block'));
+                    connector.classList.toggle('is-last-connector', !followedByModule);
+                });
+            }
+
+            // Finds the signal-chain tile for a module id.
+            getModuleTile(moduleId) {
+                const id = parseInt(moduleId, 10);
+                return document.querySelector(`.chain-module[data-module-id="${id}"]`)
+                    || Array.from(this.moduleElements || []).find((el) => parseInt(el.dataset.moduleId, 10) === id)
+                    || null;
+            }
+
             updateModuleStatus(moduleId) {
                 const statusElement = document.getElementById(`module-status-${moduleId}`);
                 const enableToggle = document.getElementById(`module-enable-${moduleId}`);
-                const moduleElement = document.querySelector(`[data-module-id="${moduleId}"]`);
-                if (enableToggle && statusElement && moduleElement) {
-                    this._syncToggleAria(enableToggle);
-                    const isOn = enableToggle.classList.contains('on');
+                const moduleElement = this.getModuleTile(moduleId);
+                if (!enableToggle) return;
+
+                const isOn = enableToggle.classList.contains('on');
+                this._syncToggleAria(enableToggle);
+
+                if (statusElement) {
                     statusElement.classList.toggle('on', isOn);
+                    statusElement.title = isOn ? 'Effect is ON' : 'Effect is OFF';
+                }
+
+                const pill = this.getModulePowerControl(moduleElement);
+                if (pill) {
+                    pill.setAttribute('aria-pressed', String(isOn));
+                    pill.textContent = isOn ? 'ON' : 'OFF';
+                    pill.title = isOn ? 'Click to disable this effect' : 'Click to enable this effect';
+                }
+
+                if (moduleElement) {
                     moduleElement.classList.toggle('disabled', !isOn);
+                    moduleElement.classList.toggle('enabled', isOn);
                 }
             }
 
@@ -2803,6 +3157,7 @@
                     if (this.patchListContainer?.classList) this.patchListContainer.classList.remove('locked');
                     this.finishInitialSync();
 
+                    this.setSyncState(null);
                     this.log(`Session state reset (${reason}).`, 'info');
                 } finally {
                     this.sessionResetInProgress = false;
@@ -2833,17 +3188,55 @@
 
             updateConnectionUI() {
                 const isConnected = this.isConnected;
-                const statusLabel = this.connectionType === 'usb' ? 'USB Connected' : this.connectionType === 'ble' ? 'BLE Connected' : 'Disconnected';
+                const transport = this.connectionType === 'usb' ? 'USB' : this.connectionType === 'ble' ? 'Bluetooth' : null;
+                const statusLabel = transport ? `${transport} connected` : 'Disconnected';
+                const detailedLabel = transport ? `${transport} · ${this.device?.name || this.selectedUsbDevice?.name || 'device'}` : 'No device';
 
                 this.connectBtn.disabled = isConnected;
                 this.disconnectBtn.disabled = !isConnected;
-                this.syncPresetNamesBtn.disabled = !isConnected;
-                this.syncModulesBtn.disabled = !isConnected;
-                this.syncUserIRsBtn.disabled = !isConnected;
-                this.syncCloneAmpsBtn.disabled = !isConnected;
-                this.syncGlobalsBtn.disabled = !isConnected;
+                for (const btn of [this.syncPresetNamesBtn, this.syncModulesBtn, this.syncUserIRsBtn, this.syncCloneAmpsBtn, this.syncGlobalsBtn]) {
+                    if (btn) btn.disabled = !isConnected;
+                }
+
+                // Saving and importing talk to the device; exporting does not.
+                for (const btn of [this.quickSaveBtn, this.quickImportBtn]) {
+                    if (btn) btn.disabled = !isConnected;
+                }
+                if (this.quickExportBtn) this.quickExportBtn.disabled = false;
+
                 this.statusDot.classList.toggle('connected', isConnected);
                 this.statusText.textContent = statusLabel;
+                this.statusText.title = detailedLabel;
+
+                if (this.topStatus && this.topStatusText) {
+                    this.topStatus.classList.toggle('connected', isConnected);
+                    this.topStatus.classList.toggle('syncing', isConnected && Boolean(this._syncStateLabel));
+                    this.topStatusText.textContent = this._syncStateLabel || (transport ? `${transport} connected` : 'Disconnected');
+                    this.topStatus.title = this._syncStateLabel || detailedLabel;
+                }
+
+                if (!isConnected) this.setSyncState(null);
+            }
+
+            // Shows what the app is currently waiting for from the device. Passing null
+            // hides the indicator. Visible in both the sidebar and the top bar chip, so a
+            // long sync is not mistaken for a frozen UI.
+            setSyncState(label) {
+                this._syncStateLabel = label || null;
+                if (this.syncState) this.syncState.hidden = !label;
+                if (this.syncStateText) this.syncStateText.textContent = label || '';
+                if (this.topStatus) {
+                    this.topStatus.classList.toggle('syncing', Boolean(label));
+                    if (label) this.topStatusText.textContent = label;
+                    else this.updateTopStatusIdle();
+                }
+            }
+
+            // Restores the top-bar chip to the connection-only label.
+            updateTopStatusIdle() {
+                if (!this.topStatus || !this.topStatusText) return;
+                const transport = this.connectionType === 'usb' ? 'USB' : this.connectionType === 'ble' ? 'Bluetooth' : null;
+                this.topStatusText.textContent = transport ? `${transport} connected` : 'Disconnected';
             }
 
             // Serialized command transport. Every send is chained onto this._writeQueue so
@@ -2928,11 +3321,223 @@
             }
 
             // ============================================================================
-            // EXPORT PRESET: Convert current UI state to human-readable JSON
+            // IN-PAGE PRESET JSON EDITOR
+            // See the current preset as JSON, edit it and apply it back to the
+            // editor (and optionally straight to the device) without a file.
             // ============================================================================
-            async exportPreset() {
-                this.log('Exporting preset...', 'info');
+            isPresetJsonEditorOpen() {
+                return Boolean(this.presetJsonModal && !this.presetJsonModal.hidden);
+            }
 
+            openPresetJsonEditor() {
+                if (!this.presetJsonModal) return;
+                this.advancedSettingsPanel?.classList.remove('visible');
+                this.advancedSettingsBtn?.setAttribute('aria-expanded', 'false');
+                this._presetJsonDirty = false;
+                this.refreshPresetJsonFromUI();
+                this.presetJsonModal.hidden = false;
+                if (this.presetJsonBackdrop) this.presetJsonBackdrop.hidden = false;
+                this.presetJsonText?.focus();
+            }
+
+            closePresetJsonEditor(force = false) {
+                if (!this.presetJsonModal) return;
+                if (!force && this._presetJsonDirty
+                    && typeof confirm === 'function'
+                    && !confirm('Discard the unsaved changes in the JSON editor?')) return;
+                this.presetJsonModal.hidden = true;
+                if (this.presetJsonBackdrop) this.presetJsonBackdrop.hidden = true;
+                this._presetJsonDirty = false;
+            }
+
+            setPresetJsonStatus(message, type = 'info') {
+                if (!this.presetJsonStatus) return;
+                this.presetJsonStatus.textContent = message;
+                this.presetJsonStatus.className = `json-editor-status ${type}`;
+            }
+
+            // Fills the textarea with the current state of the editor controls.
+            refreshPresetJsonFromUI() {
+                if (!this.presetJsonText) return;
+                if (this._presetJsonDirty && this.presetJsonText.value.trim()
+                    && typeof confirm === 'function'
+                    && !confirm('Reload the current preset and discard the JSON changes?')) return;
+                try {
+                    const presetData = this.buildPresetDataFromUI();
+                    this.presetJsonText.value = JSON.stringify(presetData, null, 2);
+                    this.presetJsonText.classList.remove('invalid');
+                    this._presetJsonDirty = false;
+                    this.setPresetJsonStatus('Loaded the current editor state. Edit the JSON, then apply it back.', 'info');
+                } catch (error) {
+                    this.setPresetJsonStatus(`Could not read the current preset: ${error.message}`, 'error');
+                }
+            }
+
+            // Turns JSON.parse's byte position into a line/column hint.
+            describeJsonError(text, error) {
+                const message = error?.message || String(error);
+                const match = /position\s+(\d+)/i.exec(message);
+                if (!match) return message;
+                const pos = Math.min(parseInt(match[1], 10), text.length);
+                const before = text.slice(0, pos);
+                const line = before.split('\n').length;
+                const column = pos - before.lastIndexOf('\n');
+                return `${message.replace(/\s*at position\s+\d+.*$/i, '')} (line ${line}, column ${column})`;
+            }
+
+            parsePresetJsonText(text) {
+                let jsonData;
+                try {
+                    jsonData = JSON.parse(text);
+                } catch (error) {
+                    throw new Error(`Invalid JSON: ${this.describeJsonError(text, error)}`);
+                }
+                if (!jsonData || typeof jsonData !== 'object' || Array.isArray(jsonData)) {
+                    throw new Error('Preset JSON must be an object.');
+                }
+                if (!jsonData.modules || typeof jsonData.modules !== 'object' || Array.isArray(jsonData.modules)) {
+                    throw new Error('Preset JSON is missing the "modules" object.');
+                }
+                return jsonData;
+            }
+
+            validatePresetJsonInput() {
+                if (!this.presetJsonText) return false;
+                const text = this.presetJsonText.value;
+                if (!text.trim()) {
+                    this.presetJsonText.classList.remove('invalid');
+                    this.setPresetJsonStatus('Paste a preset JSON or press "Reload from editor".', 'warning');
+                    return false;
+                }
+                try {
+                    this.parsePresetJsonText(text);
+                    this.presetJsonText.classList.remove('invalid');
+                    this.setPresetJsonStatus(`Valid JSON (${text.split('\n').length} lines).`, 'success');
+                    return true;
+                } catch (error) {
+                    this.presetJsonText.classList.add('invalid');
+                    this.setPresetJsonStatus(error.message, 'error');
+                    return false;
+                }
+            }
+
+            formatPresetJson() {
+                if (!this.presetJsonText) return;
+                try {
+                    const jsonData = this.parsePresetJsonText(this.presetJsonText.value);
+                    this.presetJsonText.value = JSON.stringify(jsonData, null, 2);
+                    this.presetJsonText.classList.remove('invalid');
+                    this._presetJsonDirty = true;
+                    this.setPresetJsonStatus('Formatted.', 'success');
+                } catch (error) {
+                    this.presetJsonText.classList.add('invalid');
+                    this.setPresetJsonStatus(error.message, 'error');
+                }
+            }
+
+            async copyPresetJson() {
+                if (!this.presetJsonText) return;
+                const text = this.presetJsonText.value;
+                try {
+                    if (navigator.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(text);
+                    } else {
+                        this.presetJsonText.select();
+                        document.execCommand('copy');
+                    }
+                    this.setPresetJsonStatus('JSON copied to the clipboard.', 'success');
+                } catch (error) {
+                    this.setPresetJsonStatus(`Could not copy: ${error.message}`, 'error');
+                }
+            }
+
+            downloadPresetJsonFromEditor() {
+                if (!this.presetJsonText) return;
+                try {
+                    const jsonData = this.parsePresetJsonText(this.presetJsonText.value);
+                    const name = String(jsonData.presetName || 'preset').replace(/[^\w.-]+/g, '_');
+                    this.downloadJson(jsonData, `${name}_${Date.now()}.json`);
+                    this.setPresetJsonStatus('Preset downloaded as a JSON file.', 'success');
+                } catch (error) {
+                    this.presetJsonText.classList.add('invalid');
+                    this.setPresetJsonStatus(error.message, 'error');
+                }
+            }
+
+            loadPresetJsonFile() {
+                this.presetJsonFileInput?.click();
+            }
+
+            onPresetJsonFileSelected(event) {
+                const file = event.target.files?.[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    if (!this.presetJsonText) return;
+                    this.presetJsonText.value = String(e.target.result ?? '');
+                    this._presetJsonDirty = true;
+                    this.validatePresetJsonInput();
+                };
+                reader.onerror = () => {
+                    this.setPresetJsonStatus('Could not read the selected file.', 'error');
+                };
+                reader.readAsText(file);
+                event.target.value = '';
+            }
+
+            // Converts the textarea back to the internal preset shape and applies it.
+            // With sendToDevice the complete state is also pushed to the pedal.
+            async applyPresetJsonFromEditor({ sendToDevice = false } = {}) {
+                if (!this.presetJsonText) return false;
+
+                let fullPresetData;
+                try {
+                    const jsonData = this.parsePresetJsonText(this.presetJsonText.value);
+                    fullPresetData = this.convertHumanReadableToFullPresetData(jsonData);
+                } catch (error) {
+                    this.presetJsonText.classList.add('invalid');
+                    this.setPresetJsonStatus(error.message, 'error');
+                    this.showToast(`Invalid preset JSON: ${error.message}`, 'error', 8000);
+                    return false;
+                }
+
+                try {
+                    this.applyPresetState(fullPresetData);
+                    this.presetJsonText.classList.remove('invalid');
+                    this._presetJsonDirty = false;
+
+                    // Applying a JSON preset changes the editor state: let the normal
+                    // Save flow persist it to a slot.
+                    this.isPresetModified = true;
+                    this.updatePresetModifiedUI(true);
+
+                    if (sendToDevice) {
+                        if (!this.isConnected) {
+                            this.setPresetJsonStatus('Applied to the editor, but the device is not connected.', 'warning');
+                            this.showToast('JSON applied to the editor. Connect to the device to send it.', 'warning', 6000);
+                            return true;
+                        }
+                        this.setPresetJsonStatus('Applying to the editor and sending to the device...', 'info');
+                        await this.syncPresetStateToDevice(fullPresetData);
+                        this.setPresetJsonStatus('Applied and sent to the device. Use Save to store it in a preset slot.', 'success');
+                        this.showToast('Preset JSON applied and sent to the device.', 'success');
+                    } else {
+                        this.setPresetJsonStatus('Applied to the editor. Use Save to store it in a preset slot.', 'success');
+                        this.showToast('Preset JSON applied to the editor.', 'success');
+                    }
+                    return true;
+                } catch (error) {
+                    this.setPresetJsonStatus(`Could not apply the preset: ${error.message}`, 'error');
+                    this.showToast(`Failed to apply the preset JSON: ${error.message}`, 'error', 8000);
+                    return false;
+                }
+            }
+
+            // ============================================================================
+            // PRESET JSON: current UI state in the human-readable format
+            // ============================================================================
+            buildPresetDataFromUI() {
                 try {
                     // Gather current state from UI
                     const ampModeToggle = document.getElementById('amp-clone-mode');
@@ -3072,9 +3677,25 @@
                         }
                     };
 
+                    return presetData;
+                } catch (error) {
+                    this.log(`❌ Could not read the current preset: ${error.message}`, 'error');
+                    throw error;
+                }
+            }
+
+            // ============================================================================
+            // EXPORT PRESET: Download the current UI state as a JSON file
+            // ============================================================================
+            async exportPreset() {
+                this.log('Exporting preset...', 'info');
+
+                try {
+                    const presetData = this.buildPresetDataFromUI();
+
                     // Download as JSON file
                     const jsonString = JSON.stringify(presetData, null, 2);
-                    const defaultFileName = `${presetName.replace(/\s+/g, '_')}_${Date.now()}.json`;
+                    const defaultFileName = `${presetData.presetName.replace(/\s+/g, '_')}_${Date.now()}.json`;
 
                     // Use File System Access API if available (lets us know the actual chosen name)
                     if (window.showSaveFilePicker) {
@@ -3558,6 +4179,7 @@
                 if (!this.isInitialSyncing) return;
 
                 this.isInitialSyncing = false;
+                this.setSyncState(null);
                 this.unlockPatchList();
 
                 const overlay = this.lockingOverlay || document.getElementById('lockingOverlay');
@@ -3585,6 +4207,7 @@
                     return;
                 }
                 this.log('Requesting global settings...', 'info');
+                this.setSyncState('Reading global settings...');
                 this.isWaitingForGlobals = true;
 
                 let timeout = null;
@@ -3592,6 +4215,7 @@
                     timeout = setTimeout(() => {
                         this.isWaitingForGlobals = false;
                         this.globalSettingsPromiseResolve = null;
+                        this.setSyncState(null);
                         if (isAutomated) reject(new Error('Global settings sync timed out.'));
                         else resolve();
                     }, 3000);
@@ -3600,6 +4224,7 @@
                         clearTimeout(timeout);
                         this.isWaitingForGlobals = false;
                         this.globalSettingsPromiseResolve = null;
+                        this.setSyncState(null);
                         resolve();
                     };
                 });
@@ -3794,64 +4419,352 @@
                 this.hideSaveModal();
                 this.lockingOverlay.style.display = 'flex';
                 this.isBruteForcing = true;
-                let wasSaved = false;
-
                 try {
                     const presetName = this.presetNameInput.value;
                     const presetNumber = parseInt(this.presetNumberInput.value, 10);
-                    const presetValue = presetNumber - 1;
-                    let presetBytesHex;
+                    const saved = await this._savePresetToSlot(presetNumber, presetName);
 
-                    if (presetNumber >= 1 && presetNumber <= 50) {
-                        const presetValueHex = presetValue.toString(16).padStart(2, '0');
-                        const upperNibble = presetValueHex[0];
-                        const lowerNibble = presetValueHex[1];
-                        presetBytesHex = `0${upperNibble}0${lowerNibble}`;
-                    } else {
-                        throw new Error('Invalid Preset Number. Must be between 1 and 50.');
-                    }
-
-                    const encodedNameHex = this.encodeNameForSave(presetName);
-                    const payloadTemplate = "0001000001030101040a{PRESET_BYTES}000000000000{ENCODED_NAME}000000000000";
-                    let finalPayload = payloadTemplate.replace('{ENCODED_NAME}', encodedNameHex);
-                    finalPayload = finalPayload.replace('{PRESET_BYTES}', presetBytesHex);
-
-                    // Remove the extra 'zero nibble': "0001000001060101040a" -> "010010114a..."
-                    let inputHex = finalPayload.replace(/0(.)/g, '$1');
-
-                    // Calculate CRC
-                    const crc8 = this.calculateSMBusPEC(inputHex);
-
-                    // Expand the CRC with zeroes: 0xC5 -> "0C05"
-                    const expandedCRC = crc8.split('').map(nibble => '0' + nibble).join('');
-
-                    // Rebuild an expanded SysEx to be sent
-                    const outSysEx = "8080f0" + expandedCRC + finalPayload + "f7";
-
-                    await this.writeCommand(outSysEx);
-                    const wasSuccessful = await this.waitForAck(SonicakeBLEEditor.SUCCESS_ACK_CODE);
-
-                    if (wasSuccessful) {
-                        this.log(`✅ PRESET SAVED! Checksum: ${crc8.toUpperCase()}`, 'success');
-                        wasSaved = true;
-
+                    if (saved) {
                         this.updateUIAfterSave(presetNumber, presetName);
                         this.isPresetModified = false;
                         this.updatePresetModifiedUI(false);
+                    } else if (this.lastSendFailed) {
+                        this.log('Save failed: the command could not be sent to the device. Try again.', 'error');
+                    } else {
+                        this.log('Save failed: no ACK from the device (timeout or NACK). The checksum itself is not the problem.', 'error');
                     }
-
-                    if (!wasSaved) {
-                        if (this.lastSendFailed) {
-                            this.log('Save failed: the command could not be sent to the device. Try again.', 'error');
-                        } else {
-                            this.log('Save failed: no ACK from the device (timeout or NACK). The checksum itself is not the problem.', 'error');
-                        }
-                    }
-
+                    return saved;
                 } catch (error) {
                     this.log(`An error occurred during save: ${error.message}`, 'error');
+                    return false;
                 } finally {
                     this.isBruteForcing = false;
+                    this.lockingOverlay.style.display = 'none';
+                }
+            }
+
+            // Writes the *current* device state into a user slot (1-based) with a name.
+            // Shared by the Save dialog and by the preset swap.
+            async _savePresetToSlot(presetNumber, presetName) {
+                if (!(presetNumber >= 1 && presetNumber <= 50)) {
+                    throw new Error('Invalid Preset Number. Must be between 1 and 50.');
+                }
+
+                const presetValueHex = (presetNumber - 1).toString(16).padStart(2, '0');
+                const presetBytesHex = `0${presetValueHex[0]}0${presetValueHex[1]}`;
+                const encodedNameHex = this.encodeNameForSave(presetName);
+                const payloadTemplate = "0001000001030101040a{PRESET_BYTES}000000000000{ENCODED_NAME}000000000000";
+                let finalPayload = payloadTemplate.replace('{ENCODED_NAME}', encodedNameHex);
+                finalPayload = finalPayload.replace('{PRESET_BYTES}', presetBytesHex);
+
+                // Remove the extra 'zero nibble': "0001000001060101040a" -> "010010114a..."
+                const inputHex = finalPayload.replace(/0(.)/g, '$1');
+                const crc8 = this.calculateSMBusPEC(inputHex);
+                const expandedCRC = crc8.split('').map(nibble => '0' + nibble).join('');
+                const outSysEx = "8080f0" + expandedCRC + finalPayload + "f7";
+
+                await this.writeCommand(outSysEx);
+                const wasSuccessful = await this.waitForAck(SonicakeBLEEditor.SUCCESS_ACK_CODE);
+                if (wasSuccessful) {
+                    this.log(`✅ PRESET SAVED! Slot ${presetNumber}, checksum ${crc8.toUpperCase()}`, 'success');
+                }
+                return wasSuccessful;
+            }
+
+            // ---------------------------------------------------------------
+            // USER PRESET SWAP
+            // The device has no "copy preset" command: a preset is the current
+            // state, and saving writes that state into a slot. So a swap has to
+            // (1) read both slots, (2) push A's state to the device and save it
+            // into B, (3) push B's state and save it into A.
+            // Both slots are backed up to JSON before anything is written.
+            // ---------------------------------------------------------------
+
+            async readPresetState(index) {
+                const baseName = `P${String(index + 1).padStart(2, '0')}`;
+                const selectCommand = this.commands.presetCommands?.user?.[baseName];
+                if (!selectCommand) throw new Error(`No preset command for ${baseName}`);
+
+                this.setSyncState(`Reading ${baseName}...`);
+                const read = new Promise((resolve, reject) => {
+                    this._presetRead = { resolve, reject };
+                    this._presetReadTimer = setTimeout(() => {
+                        if (!this._presetRead) return;
+                        this._presetRead = null;
+                        reject(new Error(`Timed out reading ${baseName}`));
+                    }, 8000);
+                });
+
+                try {
+                    await this.writeCommand(selectCommand);
+                    await new Promise((resolve) => setTimeout(resolve, 200));
+                    this.dumpPackets = [];
+                    this.isWaitingForPresetDump = true;
+                    await this.writeCommand('8080F0000900010000000201020401F7');
+                    const data = await read;
+                    const name = this.userPatchesData[index]?.decodedName || baseName;
+                    return { index, baseName, name, data };
+                } finally {
+                    clearTimeout(this._presetReadTimer);
+                    this._presetRead = null;
+                    this.setSyncState(null);
+                }
+            }
+
+            async writePresetState(targetIndex, name, data) {
+                const baseName = `P${String(targetIndex + 1).padStart(2, '0')}`;
+                this.setSyncState(`Writing ${baseName}...`);
+                try {
+                    // Put the captured state in the UI (also fixes the chain order,
+                    // which syncPresetStateToDevice reads from the DOM), push it to the
+                    // device, then store it in the slot by name.
+                    this.applyPresetState(data);
+                    await this.syncPresetStateToDevice(data);
+                    const saved = await this._savePresetToSlot(targetIndex + 1, name);
+                    if (!saved) throw new Error(`The device did not acknowledge saving ${baseName}`);
+                } finally {
+                    this.setSyncState(null);
+                }
+            }
+
+            // Human-readable JSON for a captured preset, so a swap can be undone with
+            // the existing Import button (same shape the Export button produces).
+            fullPresetDataToExportJson(entry) {
+                const data = entry.data;
+                const modules = {};
+                for (const moduleDef of this.definitions.modules) {
+                    const moduleId = moduleDef.moduleId;
+                    const fxId = data.selectedEffects?.[moduleId] ?? moduleDef.effects[0];
+                    const effect = this.definitions.effectLibrary[fxId];
+                    const parameters = {};
+                    for (const param of effect?.alg || []) {
+                        const value = data.parameters?.[moduleId]?.[param.algId];
+                        if (value !== undefined) parameters[param.name] = value;
+                    }
+                    modules[moduleDef.name] = {
+                        enabled: Boolean(data.states?.[moduleDef.name]),
+                        effect: effect ? effect.name : null,
+                        parameters,
+                    };
+                }
+                return {
+                    version: '1.0',
+                    presetName: entry.name,
+                    description: `Backup of ${entry.baseName} before a preset swap`,
+                    ampMode: data.ampMode || 'Normal',
+                    presetVolume: data.presetVolume ?? 75,
+                    modules,
+                    signalChain: data.order || [],
+                    metadata: {
+                        createdDate: new Date().toISOString().split('T')[0],
+                        author: 'PocketEdit',
+                        tags: ['backup'],
+                    },
+                };
+            }
+
+            downloadJson(json, fileName) {
+                const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            }
+
+            // ---------------------------------------------------------------
+            // SILENT PRESET BACKUPS
+            // Writing preset slots is destructive, so the swap keeps a copy of
+            // both presets. Triggering two automatic file downloads makes the
+            // browser ask "allow multiple downloads?", so backups are stored in
+            // localStorage instead; the Backups dialog downloads them on demand.
+            // ---------------------------------------------------------------
+
+            static get BACKUP_STORE_KEY() { return 'pocketedit.presetBackups.v1'; }
+            static get MAX_BACKUPS() { return 40; }
+
+            readBackupStore() {
+                try {
+                    const raw = localStorage.getItem(SonicakeBLEEditor.BACKUP_STORE_KEY);
+                    const list = raw ? JSON.parse(raw) : [];
+                    return Array.isArray(list) ? list : [];
+                } catch (error) {
+                    this.log(`Could not read local backups: ${error.message}`, 'warning');
+                    return [];
+                }
+            }
+
+            writeBackupStore(list) {
+                try {
+                    localStorage.setItem(SonicakeBLEEditor.BACKUP_STORE_KEY, JSON.stringify(list));
+                    return true;
+                } catch (error) {
+                    this.log(`Could not store local backups: ${error.message}`, 'error');
+                    return false;
+                }
+            }
+
+            // Stores the JSON of the given presets without any download prompt.
+            // Returns the stored entries, or null when storage is unavailable/full.
+            saveBackupsLocally(entries, reason = 'swap') {
+                const stored = this.readBackupStore();
+                const createdAt = new Date().toISOString();
+                const added = entries.map((entry) => ({
+                    id: `${entry.baseName}-${createdAt}-${Math.random().toString(36).slice(2, 7)}`,
+                    createdAt,
+                    reason,
+                    preset: entry.baseName,
+                    name: entry.name,
+                    json: this.fullPresetDataToExportJson(entry),
+                }));
+
+                // Newest first, then trim the oldest entries.
+                const next = [...added, ...stored].slice(0, SonicakeBLEEditor.MAX_BACKUPS);
+                if (!this.writeBackupStore(next)) {
+                    // Fall back to files rather than losing the backup entirely.
+                    for (const entry of entries) {
+                        this.downloadJson(this.fullPresetDataToExportJson(entry), `backup_${entry.baseName}.json`);
+                    }
+                    return null;
+                }
+                return added;
+            }
+
+            getBackupCount() {
+                return this.readBackupStore().length;
+            }
+
+            downloadBackup(id) {
+                const entry = this.readBackupStore().find((b) => b.id === id);
+                if (!entry) return;
+                this.downloadJson(entry.json, `backup_${entry.preset}_${entry.createdAt.slice(0, 19).replace(/[:T]/g, '-')}.json`);
+            }
+
+            deleteBackup(id) {
+                this.writeBackupStore(this.readBackupStore().filter((b) => b.id !== id));
+                this.renderBackupList();
+            }
+
+            clearBackups() {
+                if (typeof confirm === 'function' && !confirm('Delete all locally stored preset backups?')) return;
+                this.writeBackupStore([]);
+                this.renderBackupList();
+            }
+
+            showBackupsModal() {
+                this.renderBackupList();
+                if (this.backupModal) this.backupModal.style.display = 'block';
+            }
+
+            hideBackupsModal() {
+                if (this.backupModal) this.backupModal.style.display = 'none';
+            }
+
+            renderBackupList() {
+                if (!this.backupList) return;
+                const backups = this.readBackupStore();
+                this.backupList.textContent = '';
+                if (!backups.length) {
+                    const empty = document.createElement('p');
+                    empty.className = 'backup-empty';
+                    empty.textContent = 'No backups yet. Swapping two presets stores both of them here.';
+                    this.backupList.appendChild(empty);
+                    return;
+                }
+                for (const backup of backups) {
+                    const row = document.createElement('div');
+                    row.className = 'backup-row';
+
+                    const info = document.createElement('div');
+                    info.className = 'backup-info';
+                    const title = document.createElement('div');
+                    title.className = 'backup-title';
+                    title.textContent = `${backup.preset}: ${backup.name}`;
+                    const meta = document.createElement('div');
+                    meta.className = 'backup-meta';
+                    meta.textContent = new Date(backup.createdAt).toLocaleString();
+                    info.appendChild(title);
+                    info.appendChild(meta);
+
+                    const actions = document.createElement('div');
+                    actions.className = 'backup-actions';
+                    const dl = document.createElement('button');
+                    dl.type = 'button';
+                    dl.className = 'btn backup-btn';
+                    dl.textContent = 'Download';
+                    dl.addEventListener('click', () => this.downloadBackup(backup.id));
+                    const del = document.createElement('button');
+                    del.type = 'button';
+                    del.className = 'btn backup-btn';
+                    del.textContent = 'Delete';
+                    del.addEventListener('click', () => this.deleteBackup(backup.id));
+                    actions.appendChild(dl);
+                    actions.appendChild(del);
+
+                    row.appendChild(info);
+                    row.appendChild(actions);
+                    this.backupList.appendChild(row);
+                }
+            }
+
+            async swapUserPresets(indexA, indexB) {
+                if (!this.isConnected) {
+                    this.showToast('Connect to the device before swapping presets.', 'warning');
+                    return false;
+                }
+                if (indexA === indexB) return false;
+                if (this.isSwappingPresets) {
+                    this.showToast('A preset swap is already running.', 'warning');
+                    return false;
+                }
+
+                const baseA = `P${String(indexA + 1).padStart(2, '0')}`;
+                const baseB = `P${String(indexB + 1).padStart(2, '0')}`;
+                const nameA = this.userPatchesData[indexA]?.decodedName || baseA;
+                const nameB = this.userPatchesData[indexB]?.decodedName || baseB;
+
+                const question = `Swap ${baseA} "${nameA}" with ${baseB} "${nameB}"?\n\n`
+                    + 'Both presets are stored as local backups first, but the device slots are rewritten.';
+                if (typeof confirm === 'function' && !confirm(question)) return false;
+
+                this.isSwappingPresets = true;
+                this._suppressPresetAutosync = true;
+                this.lockingOverlay.style.display = 'flex';
+                try {
+                    const a = await this.readPresetState(indexA);
+                    const b = await this.readPresetState(indexB);
+
+                    // Silent: no file downloads, no "allow multiple downloads?" prompt.
+                    const backups = this.saveBackupsLocally([a, b], 'swap');
+                    if (backups) {
+                        this.log(`Backed up ${a.baseName} and ${b.baseName} locally (${this.getBackupCount()} total).`, 'info');
+                    }
+
+                    await this.writePresetState(indexB, a.name, a.data);
+                    await this.writePresetState(indexA, b.name, b.data);
+
+                    // Reflect the swap locally and refresh the names from the device.
+                    if (this.userPatchesData[indexA] && this.userPatchesData[indexB]) {
+                        const tmp = this.userPatchesData[indexA];
+                        this.userPatchesData[indexA] = this.userPatchesData[indexB];
+                        this.userPatchesData[indexB] = tmp;
+                        this.userPatchesData[indexA].baseName = baseA;
+                        this.userPatchesData[indexB].baseName = baseB;
+                    }
+                    this.renderPatchList();
+                    await this.syncPresetNames();
+                    this.showToast(`Swapped ${baseA} and ${baseB}.`, 'success');
+                    return true;
+                } catch (error) {
+                    this.log(`Preset swap failed: ${error.message}`, 'error');
+                    this.showToast(`Swap failed: ${error.message}`, 'error', 8000);
+                    return false;
+                } finally {
+                    this.isSwappingPresets = false;
+                    this._suppressPresetAutosync = false;
                     this.lockingOverlay.style.display = 'none';
                 }
             }
@@ -3950,6 +4863,14 @@
                             const parameterData = this.decodeParameterValues(this.dumpPackets, effectData.selectedEffects);
 
                             const fullPresetData = { ...stateData, ...effectData, ...parameterData };
+
+                            // A programmatic read (preset swap) is waiting for this dump.
+                            if (this._presetRead) {
+                                clearTimeout(this._presetReadTimer);
+                                const resolveRead = this._presetRead.resolve;
+                                this._presetRead = null;
+                                resolveRead(fullPresetData);
+                            }
 
                             this.applyPresetState(fullPresetData);
                         } catch (error) {
@@ -4233,11 +5154,7 @@
                                     }
                                 });
                                 container.insertBefore(fragment, document.getElementById('chain-terminator'));
-                                container.querySelectorAll('.chain-connector').forEach(conn => {
-                                    const next = conn.nextElementSibling;
-                                    conn.classList.toggle('is-last-connector',
-                                        !(next && (next.classList.contains('chain-module') || next.id === 'fixed-chain-block')));
-                                });
+                                this.refreshChainConnectors();
                             });
                             return true;
                         }
@@ -4248,6 +5165,10 @@
                                 : `F${String(idx - 49).padStart(2, '0')}`;
                             this.log(`📡 Preset: ${label} (index ${idx})`, 'received');
 
+                            if (this._suppressPresetAutosync) {
+                                // A programmatic read/swap is driving the UI itself.
+                                return true;
+                            }
                             this.selectPresetByIndex(idx);
                             return true;
                         }
@@ -4319,6 +5240,7 @@
                 }
 
                 this.log('Starting preset name sync (using terminator packet)...', 'info');
+                this.setSyncState('Syncing preset names...');
                 this.isSyncing = true;
                 this.dumpPackets = [];
                 this.syncPresetNamesBtn.disabled = true;
@@ -4330,6 +5252,7 @@
                     this.nameSyncTimeoutId = setTimeout(() => {
                         if (this.isSyncing) { // This will be true if the terminator packet was never received.
                             this.isSyncing = false;
+                            this.setSyncState(null);
                             this.syncPresetNamesBtn.disabled = !this.isConnected;
                             this.syncPresetNamesBtn.textContent = 'Sync Preset Names';
                             const errorMsg = 'Preset name sync timed out: Terminator packet not received.';
@@ -4353,6 +5276,7 @@
 
             processAndDisplayDump() {
                 this.isSyncing = false;
+                this.setSyncState(null);
                 this.syncPresetNamesBtn.disabled = false;
                 this.syncPresetNamesBtn.textContent = 'Sync Preset Names';
                 this.log('All SysEx name packets received. Processing...', 'info');
@@ -4385,6 +5309,7 @@
                     return;
                 }
                 this.lockPatchList();
+                this.setSyncState('Reading preset state...');
                 if (this.syncTimeoutId) {
                     clearTimeout(this.syncTimeoutId);
                 }
@@ -4407,6 +5332,7 @@
                 this.syncTimeoutId = setTimeout(() => {
                     if (this.isWaitingForPresetDump) {
                         this.isWaitingForPresetDump = false;
+                        this.setSyncState(null);
                         this.log('Preset state sync timed out.', 'error');
                         this.unlockPatchList();
                     }
@@ -4419,11 +5345,13 @@
                     return;
                 }
                 this.log('Requesting User IR names...', 'info');
+                this.setSyncState('Reading user IR names...');
 
                 let timeout = null;
                 const request = new Promise((resolve, reject) => {
                     timeout = setTimeout(() => {
                         this.irNamePromiseResolve = null;
+                        this.setSyncState(null);
                         if (isAutomated) reject(new Error('User IR name sync timed out.'));
                         else resolve();
                     }, 3000);
@@ -4431,6 +5359,7 @@
                     this.irNamePromiseResolve = () => {
                         clearTimeout(timeout);
                         this.irNamePromiseResolve = null;
+                        this.setSyncState(null);
                         resolve();
                     };
                 });
@@ -4445,11 +5374,13 @@
                     return;
                 }
                 this.log('Requesting Clone Amp names...', 'info');
+                this.setSyncState('Reading clone amp names...');
 
                 let timeout = null;
                 const request = new Promise((resolve, reject) => {
                     timeout = setTimeout(() => {
                         this.cloneNamePromiseResolve = null;
+                        this.setSyncState(null);
                         if (isAutomated) reject(new Error('Clone Amp name sync timed out.'));
                         else resolve();
                     }, 3000);
@@ -4457,6 +5388,7 @@
                     this.cloneNamePromiseResolve = () => {
                         clearTimeout(timeout);
                         this.cloneNamePromiseResolve = null;
+                        this.setSyncState(null);
                         resolve();
                     };
                 });
@@ -4846,15 +5778,7 @@
                                 }
                             });
                             container.insertBefore(newOrderFragment, document.getElementById('chain-terminator'));
-                            const connectors = container.querySelectorAll('.chain-connector');
-                            connectors.forEach(connector => {
-                                const nextEl = connector.nextElementSibling;
-                                if (nextEl && (nextEl.classList.contains('chain-module') || nextEl.id === 'fixed-chain-block' )) {
-                                    connector.classList.remove('is-last-connector');
-                                } else {
-                                    connector.classList.add('is-last-connector');
-                                }
-                            });
+                            this.refreshChainConnectors();
                         }
 
                         if (decodedData.parameters) {
@@ -5086,6 +6010,17 @@
 
                 container.addEventListener('dragover', e => {
                     e.preventDefault();
+
+                    // The chain is a horizontal strip now: nudge the scroll position when
+                    // the pointer approaches an edge, otherwise you cannot drag far.
+                    const scroller = container.closest('.chain-scroll');
+                    if (scroller) {
+                        const rect = scroller.getBoundingClientRect();
+                        const edge = 60;
+                        if (e.clientX < rect.left + edge) scroller.scrollLeft -= 14;
+                        else if (e.clientX > rect.right - edge) scroller.scrollLeft += 14;
+                    }
+
                     const afterElement = this.getDragAfterElement(container, e.clientX);
                     const connector = draggedElement.nextElementSibling;
 
@@ -5099,22 +6034,16 @@
                     }
                 });
 
+                // Initial state: the trailing connector must not show an arrow.
+                this.refreshChainConnectors();
+
                 container.addEventListener('dragend', () => {
                     if (draggedElement) {
                         draggedElement.classList.remove('dragging');
                         draggedElement = null;
                         this.updateChainOrder();
 
-                        // Add this logic to update the connectors
-                        const connectors = container.querySelectorAll('.chain-connector');
-                        connectors.forEach(connector => {
-                            const nextEl = connector.nextElementSibling;
-                            if (nextEl && (nextEl.classList.contains('chain-module') || nextEl.id === 'fixed-chain-block')) {
-                                connector.classList.remove('is-last-connector');
-                            } else {
-                                connector.classList.add('is-last-connector');
-                            }
-                        });
+                        this.refreshChainConnectors();
                     }
                 });
             }
